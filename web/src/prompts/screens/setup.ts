@@ -2,20 +2,20 @@ import { composeWithBible } from '../styleBible'
 import type { BedState, PromptProgram } from '../types'
 
 const states: Record<BedState, string> = {
-  idle: 'Top-down view of a holographic planning table in a dark room, faint volumetric grid light rising from its dark surface, slow rotating survey beam at the rim.',
+  idle: 'High bird\'s-eye view looking down onto an empty stone courtyard of a countryside venue at golden hour, flagstone floor with warm sunlight, potted olive trees and ivy along the low walls, meadow and hills at the edges of frame.',
   enter:
-    'The planning table ignites: a volumetric projection unfolds upward from the dark table surface, edges tracing outward.',
-  drag: 'The planning table surface ripples where an unseen object is being placed, concentric cyan interference rings spreading out from the center-left.',
+    'The camera rises gently above the courtyard as the sun comes out and warm light spreads across the flagstones.',
+  drag: 'Sunlight and canopy shadows shift across the courtyard floor as something is set down on the flagstones, a little dust catching the light.',
   replanning:
-    'Fine mint circuit light sweeps repeatedly across the table rim while the projection recalculates.',
-  done: 'The projection settles into a calm steady state, soft mint confirmation glow fading at the rim.',
-  alert: 'Amber warning light pulses along the table rim, haze tinted warm.',
+    'A soft breeze moves the ivy and canopy shadows across the courtyard while the light settles.',
+  done: 'The courtyard rests still in warm evening light, long soft shadows across the stone.',
+  alert: 'Clouds pass over the sun and warm lanterns glow along the courtyard walls.',
 }
 
 export const setupProgram: PromptProgram = {
   anchor: '/keyframes/setup.svg',
   fallback: '/fallback/setup.mp4',
-  hue: 168,
+  hue: 32,
   states,
   composePrompt: (state) => composeWithBible(states[state]),
 }

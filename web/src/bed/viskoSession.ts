@@ -11,6 +11,8 @@ export interface ViskoHandle {
   /** anchors the first chunk; only honoured before start / after reset */
   setImage: (url: string) => Promise<void>
   start: () => Promise<void>
+  /** fires once if the session drops on its own (not via close) */
+  onLost: (cb: () => void) => void
   close: () => Promise<void>
 }
 
@@ -43,17 +45,13 @@ async function mintJwt(): Promise<string | null> {
 // connects are serialised so a StrictMode/HMR double-mount can't race the 1-session quota
 let queue: Promise<unknown> = Promise.resolve()
 
-export function openViskoSession(
-  onError: (message: string) => void,
-): Promise<ViskoHandle | null> {
+export function openViskoSession(onError: (message: string) => void): Promise<ViskoHandle | null> {
   const next = queue.then(() => connectVisko(onError))
   queue = next.catch(() => undefined)
   return next
 }
 
-async function connectVisko(
-  onError: (message: string) => void,
-): Promise<ViskoHandle | null> {
+async function connectVisko(onError: (message: string) => void): Promise<ViskoHandle | null> {
   await releaseStaleSession()
   const jwt = await mintJwt()
   if (!jwt) return null
@@ -61,8 +59,13 @@ async function connectVisko(
   const model = new ViskoOrbisStableModel()
   if (import.meta.env.DEV) (window as unknown as { __visko: unknown }).__visko = model
   model.on('error', (err: unknown) => onError(err instanceof Error ? err.message : String(err)))
+  let closing = false
+  let lost: (() => void) | undefined
   model.on('statusChanged', (status) => {
-    if (status === 'disconnected') onError('session disconnected')
+    if (status !== 'disconnected' || closing) return
+    onError('session disconnected')
+    lost?.()
+    lost = undefined
   })
   model.onCommandError((m) => onError(`${m.command}: ${m.reason}`))
 
@@ -79,7 +82,10 @@ async function connectVisko(
   if (sessionId) sessionStorage.setItem(SESSION_KEY, sessionId)
   const release = () => {
     if (sessionId) navigator.sendBeacon(`${API_BASE}/session/${sessionId}`)
-    sessionStorage.removeItem(SESSION_KEY)
+    forget()
+  }
+  const forget = () => {
+    if (sessionStorage.getItem(SESSION_KEY) === sessionId) sessionStorage.removeItem(SESSION_KEY)
   }
   window.addEventListener('pagehide', release)
 
@@ -91,7 +97,7 @@ async function connectVisko(
       return model.onMainVideo((_track, stream) => cb(stream))
     },
     setPrompt: (prompt) => {
-      void model.setPrompt({ prompt })
+      if (model.getStatus() === 'ready') void model.setPrompt({ prompt })
     },
     setImage: async (url) => {
       const blob = await (await fetch(url)).blob()
@@ -101,9 +107,13 @@ async function connectVisko(
     start: async () => {
       await model.start()
     },
+    onLost: (cb) => {
+      lost = cb
+    },
     close: async () => {
+      closing = true
       window.removeEventListener('pagehide', release)
-      sessionStorage.removeItem(SESSION_KEY)
+      forget()
       await model.disconnect()
     },
   }

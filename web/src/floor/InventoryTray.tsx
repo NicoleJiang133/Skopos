@@ -20,7 +20,7 @@ export function InventoryTray() {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: 'rgba(70,227,255,0.05)',
+              background: 'rgba(242,198,109,0.05)',
             }}
           >
             <span style={{ fontSize: 13 }}>{item.label}</span>

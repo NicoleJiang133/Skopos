@@ -1,31 +1,31 @@
 {
   "palette": {
-    "void": { "hex": "#05070f", "prompt": "near-black indigo void" },
-    "deep": { "hex": "#0a1020", "prompt": "deep navy atmosphere" },
-    "panel": { "hex": "#0f1830", "prompt": "smoked glass panel" },
-    "edge": { "hex": "#1d2b4d", "prompt": "cold steel edge lighting" },
-    "cyan": { "hex": "#46e3ff", "prompt": "holographic cyan emission" },
-    "teal": { "hex": "#2ad9b0", "prompt": "mint telemetry glow" },
-    "amber": { "hex": "#ffb547", "prompt": "amber caution light" },
-    "magenta": { "hex": "#ff5ea8", "prompt": "magenta alert accent" }
+    "void": { "hex": "#14110d", "prompt": "deep warm umber shadow" },
+    "deep": { "hex": "#231c14", "prompt": "dusk earth tone" },
+    "panel": { "hex": "#2e2519", "prompt": "aged oak and linen" },
+    "edge": { "hex": "#4a3a26", "prompt": "warm bronze rim light" },
+    "cyan": { "hex": "#f2c66d", "prompt": "golden hour sunlight" },
+    "teal": { "hex": "#8fb96b", "prompt": "soft moss and olive green" },
+    "amber": { "hex": "#ff9a4d", "prompt": "warm lantern amber" },
+    "magenta": { "hex": "#d8735a", "prompt": "terracotta accent" }
   },
   "materials": [
-    "brushed dark alloy",
-    "smoked glass with cyan edge-light",
-    "volumetric holographic projection with fine scanlines",
-    "matte carbon floor with subtle specular sweep"
+    "weathered oak, stone and terracotta",
+    "linen canopies and woven textiles",
+    "living greenery, grass, trailing vines",
+    "sunlit dust, still water reflections"
   ],
   "lighting": [
-    "low-key ambient, single cool key light from above",
-    "emissive holograms are the brightest elements",
-    "soft volumetric haze, gentle bloom"
+    "golden hour sun, long soft shadows",
+    "warm natural bounce light, no artificial glow",
+    "gentle atmospheric haze, painterly bloom"
   ],
   "camera": [
-    "slow controlled dolly, never handheld",
-    "shallow depth of field on foreground hardware",
-    "center of frame kept dark and uncluttered for the code UI layer"
+    "slow drifting crane or gentle dolly, never handheld",
+    "wide open-world establishing framing, deep focus",
+    "center of frame kept calm and uncluttered for the code UI layer"
   ],
-  "era": "near-future venue operations deck, clean AAA game cinematic, no text, no UI chrome",
+  "era": "open-world adventure game render, a real-world venue set in a warm natural landscape, AAA cinematic, no text, no UI chrome",
   "motion": {
     "ease": "cubic-bezier(0.16, 1, 0.3, 1)",
     "fast_ms": 160,

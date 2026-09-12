@@ -85,15 +85,15 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
         borderRadius: 'var(--sk-radius-md)',
         border: '1px solid var(--sk-edge)',
         background:
-          'radial-gradient(120% 90% at 50% 110%, rgba(70,227,255,0.10), rgba(5,7,15,0.86) 65%)',
-        boxShadow: replanning ? '0 0 40px rgba(42,217,176,0.35)' : 'var(--sk-glow-cyan)',
+          'radial-gradient(120% 90% at 50% 110%, rgba(242,198,109,0.10), rgba(20,17,13,0.86) 65%)',
+        boxShadow: replanning ? '0 0 40px rgba(143,185,107,0.35)' : 'var(--sk-glow-cyan)',
         transition: 'box-shadow var(--sk-dur-med) var(--sk-ease)',
         touchAction: 'none',
         overflow: 'hidden',
       }}
     >
       <svg width={W} height={H} style={{ position: 'absolute', inset: 0 }}>
-        <g stroke="rgba(70,227,255,0.14)" strokeWidth={1}>
+        <g stroke="rgba(242,198,109,0.14)" strokeWidth={1}>
           {Array.from({ length: grid.width + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * cell} y1={0} x2={i * cell} y2={H} />
           ))}
@@ -109,7 +109,7 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
               y={z.y * cell}
               width={z.w * cell}
               height={z.h * cell}
-              fill={z.kind === 'cleaning' ? 'rgba(42,217,176,0.09)' : 'rgba(255,181,71,0.09)'}
+              fill={z.kind === 'cleaning' ? 'rgba(143,185,107,0.09)' : 'rgba(255,154,77,0.09)'}
               stroke={z.kind === 'cleaning' ? 'var(--sk-teal)' : 'var(--sk-amber)'}
               strokeDasharray="4 4"
             />

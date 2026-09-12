@@ -34,19 +34,31 @@ export function startProceduralBed(canvas: HTMLCanvasElement, getParams: () => B
 
     if (state !== lastState) {
       if (state === 'drag' || state === 'alert') {
-        pulses.push({ x: w * (0.3 + Math.random() * 0.4), y: h * (0.5 + Math.random() * 0.3), born: t })
+        pulses.push({
+          x: w * (0.3 + Math.random() * 0.4),
+          y: h * (0.5 + Math.random() * 0.3),
+          born: t,
+        })
       }
       lastState = state
     }
 
     const energy =
-      state === 'replanning' ? 1 : state === 'drag' ? 0.8 : state === 'done' ? 0.65 : state === 'enter' ? 0.9 : 0.45
-    const accent = state === 'alert' ? 35 : state === 'done' || state === 'replanning' ? 162 : hue
+      state === 'replanning'
+        ? 1
+        : state === 'drag'
+          ? 0.8
+          : state === 'done'
+            ? 0.65
+            : state === 'enter'
+              ? 0.9
+              : 0.45
+    const accent = state === 'alert' ? 35 : state === 'done' || state === 'replanning' ? 95 : hue
 
     const sky = ctx.createLinearGradient(0, 0, 0, h)
-    sky.addColorStop(0, '#05070f')
+    sky.addColorStop(0, '#14110d')
     sky.addColorStop(0.55, `hsl(${accent} 60% ${4 + energy * 4}%)`)
-    sky.addColorStop(1, '#05070f')
+    sky.addColorStop(1, '#14110d')
     ctx.fillStyle = sky
     ctx.fillRect(0, 0, w, h)
 
@@ -109,9 +121,9 @@ export function startProceduralBed(canvas: HTMLCanvasElement, getParams: () => B
 
     // vignette keeps the center dark for the code layer
     const vig = ctx.createRadialGradient(w / 2, h / 2, h * 0.12, w / 2, h / 2, h * 0.95)
-    vig.addColorStop(0, 'rgba(5,7,15,0.86)')
-    vig.addColorStop(0.5, 'rgba(5,7,15,0.35)')
-    vig.addColorStop(1, 'rgba(5,7,15,0.9)')
+    vig.addColorStop(0, 'rgba(20,17,13,0.86)')
+    vig.addColorStop(0.5, 'rgba(20,17,13,0.35)')
+    vig.addColorStop(1, 'rgba(20,17,13,0.9)')
     ctx.fillStyle = vig
     ctx.fillRect(0, 0, w, h)
 

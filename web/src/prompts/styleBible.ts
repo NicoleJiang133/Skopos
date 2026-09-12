@@ -10,13 +10,13 @@ const palette = Object.values(tokens.palette)
   .join(', ')
 
 export const STYLE_BIBLE = [
-  `Cinematic real-time 3D game render, ${tokens.era}.`,
+  `Cinematic open-world 3D game render, ${tokens.era}.`,
   `Palette: ${palette}.`,
   `Materials: ${tokens.materials.join('; ')}.`,
   `Lighting: ${tokens.lighting.join('; ')}.`,
   `Camera: ${tokens.camera.join('; ')}.`,
   'Absolutely no readable text, no logos, no user interface widgets, no people in frame.',
-  'The central third of the frame stays dark and low-detail.',
+  'The central third of the frame stays calm, soft and low-detail.',
 ].join(' ')
 
 export const NEGATIVE = [
@@ -26,6 +26,11 @@ export const NEGATIVE = [
   'ui overlay',
   'buttons',
   'charts',
+  'neon',
+  'holograms',
+  'sci-fi',
+  'cyberpunk',
+  'glowing circuitry',
   'fast cuts',
   'camera shake',
   'oversaturation',

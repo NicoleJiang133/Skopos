@@ -2,21 +2,21 @@ import { composeWithBible } from '../styleBible'
 import type { BedState, PromptProgram } from '../types'
 
 const states: Record<BedState, string> = {
-  idle: 'First person view from inside a dark operations pod looking out over a hazy venue floor, HUD ambience light breathing slowly along the pod frame.',
+  idle: 'Low third-person view standing at the edge of a sunlit garden venue: wooden tables and chairs on grass and flagstones, a small serving robot resting by a stone bar, olive trees and a valley view beyond, golden hour.',
   enter:
-    'The pod canopy light ramps up as the venue floor resolves out of the haze ahead.',
-  drag: 'A region of the venue floor ahead lights up and the haze disturbs there, light rippling outward from that zone.',
+    'The camera glides slowly into the garden venue as evening sunlight warms the tables and grass.',
+  drag: 'A table in the garden is being carried to a new spot, its long shadow sliding across the grass, dust catching the low sun.',
   replanning:
-    'Mint light threads race across the venue floor as new paths are traced through the haze.',
-  done: 'A single clean mint path glows across the venue floor, the pod frame settling back to calm cyan ambience.',
+    'The small robot pauses and turns, then rolls smoothly along a new winding path between the tables on the grass.',
+  done: 'The robot arrives at a table and settles, the garden calm in warm evening light.',
   alert:
-    'Amber caution light floods the pod frame, the venue floor ahead tinted warm and hazy.',
+    'The sky turns overcast and warm lanterns switch on across the garden tables.',
 }
 
 export const liveOpsProgram: PromptProgram = {
   anchor: '/keyframes/liveops.svg',
   fallback: '/fallback/liveops.mp4',
-  hue: 205,
+  hue: 90,
   states,
   composePrompt: (state) => composeWithBible(states[state]),
 }

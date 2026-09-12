@@ -1,24 +1,24 @@
 /* Skopos design tokens — single source of truth for the code layer.
    Mirrored in design/tokens.meta.json, which feeds the style bible prompt. */
 :root {
-  --sk-void: #05070f;
-  --sk-deep: #0a1020;
-  --sk-panel: #0f1830;
-  --sk-edge: #1d2b4d;
-  --sk-cyan: #46e3ff;
-  --sk-teal: #2ad9b0;
-  --sk-amber: #ffb547;
-  --sk-magenta: #ff5ea8;
-  --sk-text: #dbe7ff;
-  --sk-text-dim: #7f92bb;
+  --sk-void: #14110d;
+  --sk-deep: #231c14;
+  --sk-panel: #2e2519;
+  --sk-edge: #4a3a26;
+  --sk-cyan: #f2c66d;
+  --sk-teal: #8fb96b;
+  --sk-amber: #ff9a4d;
+  --sk-magenta: #d8735a;
+  --sk-text: #f5ecdc;
+  --sk-text-dim: #b3a389;
 
   --sk-radius-sm: 6px;
   --sk-radius-md: 12px;
   --sk-radius-lg: 20px;
 
   --sk-stroke: 1px;
-  --sk-glow-cyan: 0 0 18px rgba(70, 227, 255, 0.45);
-  --sk-glow-amber: 0 0 18px rgba(255, 181, 71, 0.45);
+  --sk-glow-cyan: 0 0 18px rgba(242, 198, 109, 0.4);
+  --sk-glow-amber: 0 0 18px rgba(255, 154, 77, 0.45);
 
   --sk-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --sk-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -41,7 +41,7 @@ body,
 }
 
 .sk-panel {
-  background: linear-gradient(180deg, rgba(15, 24, 48, 0.82), rgba(10, 16, 32, 0.72));
+  background: linear-gradient(180deg, rgba(46, 37, 25, 0.78), rgba(35, 28, 20, 0.7));
   border: var(--sk-stroke) solid var(--sk-edge);
   border-radius: var(--sk-radius-md);
   backdrop-filter: blur(14px);
@@ -58,12 +58,12 @@ body,
   pointer-events: none;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(70, 227, 255, 0.05) 0px,
-    rgba(70, 227, 255, 0.05) 1px,
+    rgba(20, 17, 13, 0.06) 0px,
+    rgba(20, 17, 13, 0.06) 1px,
     transparent 1px,
     transparent 3px
   );
-  mix-blend-mode: screen;
+  mix-blend-mode: multiply;
 }
 
 @keyframes sk-breathe {
