@@ -80,6 +80,12 @@
   .state.MARGINAL{color:var(--warn);border-color:var(--warn);background:rgba(242,181,68,.08)}
   .state.NOT{color:var(--bad);border-color:var(--bad);background:rgba(224,87,74,.08)}
   .state.none{color:var(--dimmer);border-color:var(--line);font-size:15px}
+  .state.unreliable{color:var(--dimmer);border-color:var(--line);
+        background:repeating-linear-gradient(45deg,#12161d,#12161d 6px,#161b24 6px,#161b24 12px);
+        font-size:13px;letter-spacing:0}
+  tr.unreliable td{color:var(--dimmer)}
+  .gated{color:var(--dimmer);font-style:italic}
+  tr.sel td{background:rgba(74,168,224,.09)}
 
   table{width:100%;border-collapse:collapse;font:11px/1.45 var(--mono)}
   td,th{padding:2px 4px;text-align:left;border-bottom:1px solid #1a2029}
@@ -208,13 +214,24 @@
     </div>
 
     <div class="panel">
-      <h2>campaign result</h2>
+      <h2>home archetype <span class="sub">&mdash; re-weighted, not re-sampled</span></h2>
       <div class="body scroll">
-        <div class="kv"><span>P(failure) under the proposal</span><b id="m-pfail">&mdash;</b></div>
-        <div class="kv"><span>failures observed</span><b id="m-fails">&mdash;</b></div>
-        <div class="kv"><span>strategy</span><b id="m-strategy">&mdash;</b></div>
-        <div class="kv"><span>proposal</span><b id="m-proposal" style="font-size:10px">&mdash;</b></div>
-        <div class="note" style="margin-top:10px" id="m-note"></div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <label class="fld">score this room as a
+            <select id="in-archetype"></select>
+          </label>
+        </div>
+        <table id="arch"><tbody></tbody></table>
+        <div class="note" style="margin-top:8px" id="arch-caption">
+          Run a campaign, then switch archetype.
+        </div>
+        <div style="border-top:1px solid var(--line);margin-top:9px;padding-top:8px">
+          <div class="kv"><span>P(failure) under the proposal</span><b id="m-pfail">&mdash;</b></div>
+          <div class="kv"><span>failures observed</span><b id="m-fails">&mdash;</b></div>
+          <div class="kv"><span>strategy</span><b id="m-strategy">&mdash;</b></div>
+          <div class="kv"><span>proposal</span><b id="m-proposal" style="font-size:10px">&mdash;</b></div>
+          <div class="note" style="margin-top:8px" id="m-note"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -240,6 +257,7 @@
       <div class="bignum" id="r-score">&mdash;</div>
       <div style="font:10px var(--mono);color:var(--dimmer);margin:0 0 7px">/ 100</div>
       <div class="state none" id="r-state">no campaign yet</div>
+      <div class="note" id="r-caption" style="margin-top:6px"></div>
     </div>
   </div>
 </div>
@@ -250,7 +268,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-let ws = null, state = null, busy = false;
+let ws = null, state = null, busy = false, lastReport = null;
 
 function toast(t){
   const el = $("toast"); el.textContent = t; el.classList.add("on");
@@ -278,6 +296,7 @@ function handle(m){
     case "campaign_done": setBusy(false); onCampaign(m); break;
     case "frame": onFrame(m); break;
     case "bandit": onBandit(m); break;
+    case "rescored": onRescored(m); break;
     case "toast": toast(m.text); break;
   }
 }
@@ -312,6 +331,19 @@ function renderState(s){
 
   if(s.scene) $("payload").textContent = JSON.stringify(s.scene, null, 2);
   if(s.bandit) drawArms(s.bandit);
+
+  const asel = $("in-archetype");
+  if(!asel.options.length){
+    const none = document.createElement("option");
+    none.value = ""; none.textContent = "(the proposal itself)";
+    asel.appendChild(none);
+    s.archetype_names.forEach(a => {
+      const o = document.createElement("option");
+      o.value = a; o.textContent = a.replace(/_/g, " ");
+      asel.appendChild(o);
+    });
+  }
+  asel.value = s.archetype || "";
   if(s.report) drawReport(s.report);
   drawSpark(s.history || []);
   $("m-runs").textContent = (s.history || []).length;
@@ -326,12 +358,33 @@ function onCampaign(m){
   pay.classList.remove("flash"); void pay.offsetWidth; pay.classList.add("flash");
 }
 
-function drawReport(r){
-  const st = r.readiness.state;
-  $("r-score").textContent = r.readiness.score;
+function setHeadline(score, state, caption){
+  // Constraint 5: an importance-weighted estimate with too small an effective
+  // sample size is never shown as a number. state === null means gated.
   const el = $("r-state");
-  el.textContent = st;
-  el.className = "state " + (st === "READY" ? "READY" : st === "MARGINAL" ? "MARGINAL" : "NOT");
+  if(state === null || score === null){
+    $("r-score").innerHTML = '<span class="gated" style="font-size:15px">withheld</span>';
+    el.textContent = "ESS TOO LOW";
+    el.className = "state unreliable";
+  } else {
+    $("r-score").textContent = score;
+    el.textContent = state;
+    el.className = "state " + (state === "READY" ? "READY" : state === "MARGINAL" ? "MARGINAL" : "NOT");
+  }
+  $("r-caption").textContent = caption || "";
+}
+
+function drawReport(r){
+  lastReport = r;
+  const sel = $("in-archetype").value;
+  if(sel){
+    const row = (r.archetypes || []).find(a => a.name === sel);
+    if(row) setHeadline(row.score, row.state, "as a " + sel.replace(/_/g," "));
+    else setHeadline(r.readiness.score, r.readiness.state, "under the proposal");
+  } else {
+    setHeadline(r.readiness.score, r.readiness.state, "under the proposal");
+  }
+  drawArchetypes(r);
 
   $("m-pfail").textContent = (100 * r.p_fail).toFixed(2) + "%";
   const totalFails = r.attribution.reduce((a, h) => a + h.failures, 0);
@@ -359,6 +412,50 @@ function drawReport(r){
   });
   if(!r.attribution.length)
     tb.innerHTML += '<tr><td colspan="4" style="color:var(--dimmer)">no failures in this campaign</td></tr>';
+}
+
+function drawArchetypes(r){
+  const tb = $("arch").querySelector("tbody");
+  const sel = $("in-archetype").value;
+  tb.innerHTML = '<tr><th>archetype</th><th class="r">P(fail)</th><th class="r">ESS</th><th class="r">readiness</th></tr>';
+  (r.archetypes || []).forEach(a => {
+    const tr = document.createElement("tr");
+    tr.className = (a.reliable ? "" : "unreliable ") + (a.name === sel ? "sel" : "");
+    // Constraint 5: unreliable -> show the ESS, never the estimate.
+    const pf = a.reliable ? (100 * a.p_fail).toFixed(1) + "%"
+                          : '<span class="gated">withheld</span>';
+    const rd = a.reliable ? (a.score + " " + a.state)
+                          : '<span class="gated">ESS &lt; ' + r.ess_min + "</span>";
+    tr.innerHTML =
+      "<td>" + a.name.replace(/_/g, " ") + "</td>" +
+      '<td class="r">' + pf + "</td>" +
+      '<td class="r">' + a.ess.toLocaleString() + "</td>" +
+      '<td class="r">' + rd + "</td>";
+    tb.appendChild(tr);
+  });
+  const any = (r.archetypes || [])[0];
+  const ms = any ? any.rescore_ms : 0;
+  $("arch-caption").innerHTML =
+    "same <b>" + r.samples.toLocaleString() + "</b> samples, re-weighted \u2014 "
+    + "<b>0 new generations, 0 new surrogate evaluations</b>."
+    + (any ? "<br>" + ms.toFixed(0) + " ms to re-weight"
+             + (r.sample_ms ? " \u00b7 " + (r.sample_ms/1000).toFixed(1) + " s to re-sample" : "")
+             + " \u00b7 re-rendering would cost 12 world-model calls"
+           : "");
+}
+
+function onRescored(m){
+  const a = m.row;
+  setHeadline(a.score, a.state, m.archetype ? ("as a " + m.archetype.replace(/_/g," "))
+                                            : "under the proposal");
+  if(lastReport){
+    const i = (lastReport.archetypes || []).findIndex(r => r.name === a.name);
+    if(i >= 0) lastReport.archetypes[i] = a;
+    drawArchetypes(lastReport);
+  }
+  toast("re-weighted onto " + m.archetype.replace(/_/g," ") + " in "
+        + a.rescore_ms.toFixed(0) + " ms \u2014 " + a.samples_reused.toLocaleString()
+        + " samples reused, 0 new generations");
 }
 
 function onFrame(m){
@@ -459,6 +556,18 @@ $("btn-bandit").onclick = () => {
   $("btn-bandit").className = banditOn ? "primary" : "";
 };
 $("btn-bandit-reset").onclick = () => send({type:"bandit_reset"});
+
+$("in-archetype").addEventListener("change", (e) => {
+  const name = e.target.value;
+  if(!name){
+    if(lastReport){
+      setHeadline(lastReport.readiness.score, lastReport.readiness.state, "under the proposal");
+      drawArchetypes(lastReport);
+    }
+    return;
+  }
+  send({type:"rescore", archetype:name});
+});
 
 window.addEventListener("resize", () => { if(state) drawSpark(state.history || []); });
 

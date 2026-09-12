@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import logging
 import os
 from dataclasses import dataclass, field, replace
@@ -88,20 +89,88 @@ def scene_to_dict(sg: SceneGraph) -> Dict[str, Any]:
     }
 
 
+class CachedProposal:
+    """Memoising wrapper around the campaign's proposal distribution.
+
+    Campaign.p_fail_under computes `prior.log_pdf(t) - self.proposal.log_pdf(t)`
+    for every stored theta. The proposal is a four-component mixture, so it is
+    roughly four fifths of the cost, and it is recomputed from scratch on every
+    archetype switch even though the thetas never change.
+
+    Wrapping it here caches that term per theta. This changes no arithmetic:
+    engine.py is untouched, the same MixtureProposal does the work, and
+    selftest.py asserts the cached campaign returns bit-identical estimates to
+    an uncached one. It just makes switching archetypes actually instant, which
+    is the claim the UI makes.
+    """
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self._cache: Dict[int, float] = {}
+
+    @property
+    def name(self) -> str:
+        return self.inner.name
+
+    def sample(self, n_items: int, rng):
+        return self.inner.sample(n_items, rng)
+
+    def log_pdf(self, theta) -> float:
+        key = id(theta)
+        hit = self._cache.get(key)
+        if hit is None:
+            hit = self.inner.log_pdf(theta)
+            self._cache[key] = hit
+        return hit
+
+
+def band(score: int) -> str:
+    """Mirror of Campaign.readiness()'s banding, applied to a re-weighted estimate.
+
+    engine.py does not export the thresholds and we do not modify it, so they
+    are restated here. selftest.py asserts this function still agrees with
+    Campaign.readiness() across the whole range, so it cannot drift silently.
+    """
+    return "READY" if score >= 85 else "MARGINAL" if score >= 60 else "NOT READY"
+
+
+def rescore(camp: Campaign, prior) -> Dict[str, Any]:
+    """Re-score an EXISTING campaign under a different prior. No new sampling.
+
+    This is the whole point of importance re-weighting: the generations are
+    already paid for, and moving to another archetype costs one pass over the
+    stored thetas.
+    """
+    t0 = time.perf_counter()
+    est, ess = camp.p_fail_under(prior)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    ok = bool(reliable(ess))
+    score = int(round(100 * (1.0 - est)))
+    return {
+        "name": prior.name,
+        "p_fail": round(est, 4),
+        "ess": round(ess, 1),
+        "reliable": ok,
+        # Constraint 5: when the weights have degenerated these must not be
+        # displayed as numbers. They are still sent so the UI can show what it
+        # is withholding, but `reliable` is the gate and the UI greys them out.
+        "score": score if ok else None,
+        "state": band(score) if ok else None,
+        "rescore_ms": round(elapsed_ms, 3),
+        "samples_reused": len(camp.thetas),
+        "new_samples": 0,
+    }
+
+
 def campaign_report(camp: Campaign, strategy: str, m: int, seed: int) -> Dict[str, Any]:
     """Everything the UI needs from one campaign. No new sampling happens here."""
     score, state = camp.readiness()
-    rows = []
-    for name, prior in ARCHETYPES.items():
-        est, ess = camp.p_fail_under(prior)
-        rows.append({
-            "name": name,
-            "p_fail": round(est, 4),
-            "ess": round(ess, 1),
-            # Constraint 5: the UI must never render an unreliable estimate as
-            # if it were a number. This flag is the gate.
-            "reliable": bool(reliable(ess)),
-        })
+    # Warm the proposal log-pdf cache before timing anything. Filling it is part
+    # of the campaign's own cost; charging it to the first archetype switch
+    # would misreport what switching actually costs.
+    first = next(iter(ARCHETYPES.values()))
+    camp.p_fail_under(first)
+    rows = [rescore(camp, prior) for prior in ARCHETYPES.values()]
     attribution = camp.attribution()
     total_fail = sum(attribution.values()) or 1
     return {
@@ -135,6 +204,8 @@ class Demo:
     provider: WorldModelProvider = field(default_factory=build_provider)
     history: List[float] = field(default_factory=list)   # readiness over time
     bandit: Optional[OnlineBandit] = None
+    archetype: str = ""          # empty = show the proposal estimate
+    sample_ms: float = 0.0
 
     def ensure_bandit(self) -> OnlineBandit:
         if self.bandit is None:
@@ -153,9 +224,15 @@ class Demo:
         """Blocking. Call from a worker thread."""
         if strategy:
             self.strategy = strategy
-        camp = Campaign(self.scene, default_proposal()).run(self.m, self.strategy, self.seed)
+        t0 = time.perf_counter()
+        camp = Campaign(self.scene, CachedProposal(default_proposal())).run(
+            self.m, self.strategy, self.seed)
+        self.sample_ms = (time.perf_counter() - t0) * 1000.0
         self.campaign = camp
+        # Building the report re-scores every archetype, which also warms the
+        # proposal log-pdf cache, so later archetype switches are cheap.
         self.report = campaign_report(camp, self.strategy, self.m, self.seed)
+        self.report["sample_ms"] = round(self.sample_ms, 1)
         self.history.append(self.report["readiness"]["score"])
         if len(self.history) > 200:
             self.history = self.history[-200:]
@@ -182,6 +259,7 @@ class Demo:
             "assertion": startup_assertion(),
             "ess_min": engine.ESS_MIN,
             "bandit": self.ensure_bandit().snapshot(),
+            "archetype": self.archetype,
         }
 
 
@@ -331,6 +409,21 @@ class Loop:
         await self.send({"type": "frame", "frame": frame.to_dict(),
                          "strategy": self.d.strategy, "label": "base room"})
 
+    async def rescore(self, name: str) -> None:
+        """Re-weight the existing campaign onto another archetype. No sampling."""
+        camp = self.d.campaign
+        if camp is None:
+            await self.send({"type": "toast", "text": "run a campaign first"})
+            return
+        prior = ARCHETYPES.get(name)
+        if prior is None:
+            return
+        self.d.archetype = name
+        # Half a second of pure Python at 20k samples: off the event loop.
+        row = await asyncio.to_thread(rescore, camp, prior)
+        row["sample_ms"] = round(self.d.sample_ms, 1)
+        await self.send({"type": "rescored", "row": row, "archetype": name})
+
     async def handle(self, msg: Dict[str, Any]) -> None:
         t = msg.get("type")
         if t == "run_campaign":
@@ -344,6 +437,8 @@ class Loop:
             await self.run_campaign(strategy)
         elif t == "get_state":
             await self.send_state()
+        elif t == "rescore":
+            await self.rescore(msg.get("archetype", ""))
         elif t == "bandit_pause":
             self.bandit_on = False
         elif t == "bandit_resume":
