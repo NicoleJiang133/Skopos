@@ -1,8 +1,8 @@
 # Skopos
 
-**A pre-deployment readiness check for home robots.** Scan your room, and Skopos
-generates perturbed variants of it, runs a household task across them, and tells
-you where the robot fails — before the robot is in your house.
+**A pre-deployment readiness check for home robots.** Scan a room, sample
+thousands of plausible variants of it, find where a fetch task fails, and get a
+verdict — before the robot ships to that home.
 
 > A home robot should meet your home before it ships to your home.
 
@@ -12,210 +12,137 @@ you where the robot fails — before the robot is in your house.
 
 ```bash
 pip install -r requirements.txt
-./run.sh                     # or: make dev   (Windows: see below)
+python -m uvicorn app:app --host 127.0.0.1 --port 8077
 open http://127.0.0.1:8077
 ```
 
-No API keys. No network. No npm. The default providers are mocks and the whole
-app runs end to end offline.
-
-On Windows PowerShell, `run.sh` needs a POSIX shell; use this instead:
-
-```powershell
-python -m uvicorn skopos.server:app --host 127.0.0.1 --port 8077
-```
-
-Then `python -m skopos.selftest` to check that every claim below still holds.
+No API keys, no network, no npm. `python selftest.py` checks every claim below.
 
 ## Architecture in five bullets
 
-- **`perception/`** turns frames into a `SceneGraph`. **Pixels stop here.**
-- **`scene_graph.py`** is the central typed object — objects, approximate poses,
-  materials, hazard flags. Every other module depends only on it.
-- **`sampler/`** draws perturbed rooms from a prior over six named axes by Monte
-  Carlo, with importance weighting so rare-but-severe rooms get scored without
-  being enumerated.
-- **`agent/`** attempts one task ("fetch the mug from the table") using one of
-  four discrete strategies chosen by a **contextual bandit**.
-- **`providers/`** render a `SceneGraph` through a world model. `mock.py` is
-  synthetic and needs nothing; `reactor.py` targets Reactor's real-time API.
+- **`engine.py`** is the sampling engine and a **fixed dependency** — scene
+  graph, surrogate scorer, Monte Carlo campaigns, importance re-weighting and
+  cross-entropy search. Stdlib only. Nothing else in this repo modifies it.
+- **A campaign scores on the scene graph, never on pixels.** ~20,000
+  configurations per run through a microsecond surrogate; **twelve** of them get
+  a world-model call. That ratio is the point.
+- **Sample once, re-score many times.** A defensive mixture proposal bounds the
+  importance weights, so the same samples can be re-weighted onto any home
+  archetype for **zero new generations** — with the effective sample size shown
+  next to every estimate.
+- **`bandit.py`** is a contextual bandit (LinUCB) over four task strategies,
+  adapting online as the room changes.
+- **`app.py`** is FastAPI + one WebSocket; **`static/index.html`** is the entire
+  front end — vanilla JS, no build step, no external requests.
 
 ```
-scan (frames)
-  └─> perception/     VLM or mock  ->  SceneGraph      [pixels stop here]
-        └─> SceneGraph
-              ├─> sampler/    perturbation sampling under a prior + IS weights
-              │     └─> perturbed SceneGraph
-              │           └─> providers/  world-model render
-              ├─> agent/      task attempt + contextual bandit
-              └─> metrics/    success rate, hazard attribution, readiness
+scan ──▶ SceneGraph ──┬──▶ surrogate ──▶ campaign ──▶ readiness + hazards
+    [pixels stop here] │                     ├──▶ re-weight ──▶ per-archetype verdict
+                       │                     └──▶ elite(12) ──▶ world-model render
+                       ├──▶ cross-entropy search ──▶ rare-but-plausible failures
+                       └──▶ contextual bandit ──▶ strategy selection
 ```
 
 ---
 
 ## What this is not — please read before judging
 
-These are the limits of the build, stated plainly.
+1. **Online adaptation is a contextual bandit, not a trained policy.** A bandit
+   is the one-step case of reinforcement learning: one decision, one reward, no
+   state transition, no credit assignment over time. Nothing in this repo is
+   trained. `selftest.py` greps the whole codebase to enforce it.
+2. **This is not a digital twin.** There is no metric ground truth, no collision
+   mesh, no physics and no SLAM. Positions are approximate metres in a
+   room-local frame, and the failure model is a hand-written geometric and
+   semantic surrogate whose every coefficient is visible in `engine.py`. A
+   perturbed room is a *plausible* hypothesis about how a home might differ, not
+   a measurement of one.
+3. **The rendered frames are a mock by default.** `providers/mock.py` draws a
+   stylised plan view and is what you see unless you supply credentials. It is
+   labelled `MOCK RENDER / not a world model` inside the image itself.
+4. **The Reactor adapter has never run against the live API.** It is written
+   against the public docs at <https://docs.reactor.inc>, read at build time.
+   Facts from the docs are marked `[docs]` in the source; every inference is
+   marked `TODO(reactor)`. Its `health()` says so out loud.
+5. **The demo room is hand-written**, not scanned. `DEMO_ROOM` in `engine.py` is
+   six objects a human typed in. No vision model ran.
+6. **The readiness thresholds are a judgement call**, not a result:
+   READY ≥ 85, MARGINAL ≥ 60. `readiness = 100 × (1 − P(failure))`.
+7. **The archetype priors are assumptions**, not measurements of real homes.
 
-1. **We are not training a policy.** Online adaptation is a **contextual bandit**
-   (LinUCB) over four discrete strategies. A bandit is the one-step case of
-   reinforcement learning — no state transitions, no credit assignment over
-   time. Nothing in this repo is trained, and the words "trained" and "learned
-   policy" appear nowhere in the code. See `skopos/agent/bandit.py`.
+Anything provisional is named with a `placeholder_` prefix. There are currently
+none, and the self-test fails if one appears unlabelled.
 
-2. **We are not building a digital twin.** Generated rooms are *plausible*, not
-   accurate. There is no metric ground truth, no collision mesh, no SLAM, no
-   physics. Poses are approximate numbers in a room-local frame. A perturbed
-   room is a hypothesis about how your room might differ tomorrow, not a
-   measurement of it.
+## The statistics, and the one rule that matters
 
-3. **The task outcome is a simulator, not a robot.** `agent/task.py` samples
-   success, hazard contact and duration from a hand-specified generative model
-   whose every coefficient is visible in that file. We chose an explicit,
-   readable failure model over pretending a controller is executing. Swapping in
-   a real rollout changes nothing else in the system.
-
-4. **The demo room is hand-authored.** `perception/mock.py` contains a room a
-   human wrote down; no vision model ran. The Claude-backed perception path in
-   `perception/claude_vlm.py` is real code but was not exercised against real
-   frames during the build.
-
-5. **The Reactor adapter has never run against the live API.** It is written
-   against the public docs (read at build time) and every unverified assumption
-   is marked `TODO(reactor)` in `providers/reactor.py`. The headline number you
-   see on screen comes from the mock renderer, and the UI says `mock` in the
-   provider badge when it does.
-
-6. **The readiness thresholds are a judgement call**, not a result.
-   READY ≥ 75, MARGINAL ≥ 50. Argue with them; the formula is printed on screen.
-
-7. **The perturbation rates are assumptions**, not measurements. They are priors
-   over how often a living room changes, set by hand. The UI labels them
-   "rates, not measurements".
-
-Any placeholder metric in this codebase is named with a `placeholder_` prefix so
-it is impossible to mistake for a real one. The self-test checks for them; there
-are currently none.
-
----
-
-## Privacy — a headline feature, not a footnote
-
-- Frames are processed into a `SceneGraph` **in memory and then discarded**.
-  Nothing is written to disk outside `SKOPOS_DEBUG_KEEP_FRAMES=1`, which
-  defaults off and prints a shouting warning at startup when it is on.
-- **Only the `SceneGraph` — structured text — crosses a network boundary.**
-- The UI has a **"what leaves your device"** panel showing the exact JSON
-  payload live, next to a frames-seen / frames-discarded / frames-retained
-  counter and a permanent `pixels sent: 0`. You can read the payload on screen
-  and confirm there is not a pixel in it.
-- The startup log prints:
-
-  > `PRIVACY: frames are processed in memory and discarded; only the SceneGraph
-  > (structured text, no pixels) leaves this device.`
-
-**The one caveat, stated honestly:** if you run with `SKOPOS_PERCEPTION=claude`,
-the network boundary moves *inside* perception — your scan frames go to the
-Claude API exactly once, and the SceneGraph comes back. The default
-(`SKOPOS_PERCEPTION=mock`) never leaves the machine at all.
-
----
-
-## Combinatorics: sample, never enumerate
-
-The joint space of object presence × pose × material × lighting over ten objects
-is astronomically large, so we never materialise it.
-
-**Six axes**, each with a *rate* (how often it fires) and a *magnitude*
-distribution (how big it is when it does): `object_moved`, `object_removed`,
-`lighting`, `occlusion`, `clutter_added`, `reflective_surface`.
-
-**Monte Carlo with importance weighting.** We draw rooms from a tilted proposal
-`q` that fires the axes more often and harder than the prior `p`, then correct:
+We want `P(failure)` under several home archetypes. Sampling each archetype
+separately would cost a full campaign each. Instead we sample **once** from a
+defensive mixture proposal and re-weight:
 
 ```
-w(room) = p(room) / q(room)
-E_p[f] ≈ Σ wᵢ fᵢ / Σ wᵢ          (self-normalised)
+P_i(fail) ≈ Σ w_m · 1(fail_m) / Σ w_m ,    w_m = p_i(θ_m) / q(θ_m)
 ```
 
-Because the axes are independent, both densities factorise and the weight is a
-product of per-axis ratios. With `r' = r^(1-tilt) ≥ r`, an *active* axis is
-discounted (`w < 1`, we over-drew it) and an *inactive* axis is credited
-(`w > 1`, we under-drew it). At `tilt = 0` the proposal *is* the prior and every
-weight is exactly `1.0` — the self-test asserts this to eleven decimal places.
+`q` mixes every target archetype plus one deliberately over-dispersed component,
+which bounds `p_i/q ≤ K` and floors the effective sample size at roughly `M/K`.
+That is what makes re-scoring statistically honest rather than a trick.
 
-Weights are **truncated to [0.1, 10]** (Ionides-style truncated importance
-sampling): raw ESS collapsed below 1% of the sample count at high tilt, and this
-trades a small known bias for a large variance reduction. The raw weight is kept
-alongside the clipped one. Kish's **effective sample size** is on screen, and the
-readiness score's coverage term is driven by it, so a run whose weights have
-collapsed cannot quietly score well.
+**And the rule: an importance-weighted estimate is never displayed when its
+effective sample size is too small.** Below `ESS_MIN = 200` the weights have
+degenerated onto a handful of samples and the number is noise, so the UI greys
+the row out and shows the ESS instead — and the headline verdict becomes a
+hatched **ESS TOO LOW** panel rather than a score.
 
-Everything is driven by a seeded RNG. **The seed is in the UI header**, and
-`python -m skopos.selftest` verifies that the same seed reproduces a run
-attempt-for-attempt.
+You can watch this fire. Run the adversarial search, then select
+**adversarial (CEM)** in the archetype dropdown: the converged prior sits far
+from the proposal, ESS collapses to around 50, and the verdict is withheld.
+Measured, in `selftest.py`, not asserted.
 
-The self-test also checks the weighting numerically: it estimates the prior mean
-of an axis from *tilted* samples and compares it against samples drawn straight
-from the prior. They agree to ~2e-4.
+## What you can do in the UI
 
----
-
-## The agent and the bandit
-
-One task: **fetch the mug from the table.** Four strategies:
-
-| arm | behaviour |
+| control | what happens |
 | --- | --- |
-| `direct_approach` | shortest path, no re-look |
-| `wide_arc` | detour around flagged objects |
-| `slow_scan_then_approach` | re-perceive, then move slowly |
-| `request_human_assist` | stop and ask a human |
+| **Run campaign** | streams 20,000 samples in ten chunks; the readiness estimate visibly settles rather than jumping, then the worst twelve rooms are rendered |
+| **archetype dropdown** | re-weights the *existing* campaign onto another home — 0 new generations, ESS shown for each |
+| **Clear the worst hazard** | acts on the report: moves the worst attributed object off the robot's path and re-measures |
+| **move an object** | drag x/y; dragging updates the graph and the render, releasing re-measures |
+| **Run search** | cross-entropy search refits the sampler to its own worst outcomes |
+| **Record / Replay** | dumps a run to `runs/<id>/` and plays it back from disk with nothing on the network |
 
-**LinUCB, not epsilon-greedy**, for three reasons, all in the module docstring:
-the value of an arm genuinely depends on the room so a linear model shares
-strength across contexts and re-orders within tens of episodes; LinUCB carries an
-explicit uncertainty term `α·√(xᵀA⁻¹x)` that we *draw on screen* as the lighter
-segment of each bar, whereas epsilon-greedy's exploration is an invisible coin
-flip; and it is closed-form, so a replay reproduces the bars exactly.
+There is deliberately **no lighting slider**. `engine.apply()` overwrites
+`scene.lighting` with the sampled `theta.lighting`, so editing the base scene's
+lighting would change the render and change nothing about the measurement.
+Lighting and clutter are sampled perturbation axes, not properties of the scan —
+you change them by switching archetype.
 
-Reward, all terms in [0, 1]:
+## Measured on the build machine
 
-```
-r = success − 0.45·hazard_contact − 0.25·(time/60s) − 0.30·asked_for_help
-```
+| | |
+| --- | --- |
+| surrogate throughput | ~6,400 samples/s (not the 35,000 quoted for `engine.py` elsewhere — measure yours) |
+| 20,000-sample campaign | ~1.2–3.1 s, on a worker thread so the socket never stalls |
+| re-weighting onto another archetype | ~460 ms, **0 new generations** |
+| cross-entropy search | 5 × 400 samples in ~150 ms; failure rate 46% → 100% |
+| rendered frames per campaign | **12 of 20,000** (0.06%) |
 
-Asking a human nearly always completes the task but is heavily discounted, so it
-only wins where the other arms are genuinely unreliable.
+A representative run: the scanned room scores **64 MARGINAL** with the glass
+table causing half the failures. Clear it → **72**, and the dark rug becomes the
+bottleneck. Clear that → **81**, and what remains is the mug simply not being
+there, which no amount of moving furniture fixes.
 
-**Watch the four bars re-order when the room shifts. That is the demo.**
+## Privacy
 
-## Readiness score
+Frames are processed in memory and discarded. Only the scene graph — structured
+text — crosses a network boundary, and the UI shows the exact payload live next
+to a counter for frames processed, frames discarded, frames written to disk and
+a permanent `pixels transmitted: 0`.
 
-```
-R = 100 · ( 0.45·S_w + 0.25·(1 − H_w) + 0.20·coverage + 0.10·timeliness )
-```
+Nothing is written to disk outside `SKOPOS_DEBUG_KEEP_FRAMES=1`, which defaults
+off; when it is on, the startup assertion shouts about it and the panel turns
+red. The assertion is logged at startup:
 
-`S_w` and `H_w` are the importance-weighted success and hazard-contact rates;
-`coverage` is ESS against a 15-room budget; `timeliness` is `1 − mean_time/60s`.
-The coverage term is a *confidence discount* — a run that has seen three rooms
-cannot score highly no matter how well it did. Bands: **READY ≥ 75**,
-**MARGINAL ≥ 50**, **NOT READY** below.
-
-The score, the formula and the big state word are all on screen together.
-
----
-
-## Record and replay
-
-- **Record run** dumps frames, metrics, config, prior and seed to
-  `runs/<run-id>/` (`meta.json`, `events.jsonl`, `metrics.json`, `bandit.json`).
-- **Replay** plays a recorded run back from disk with **no provider calls and no
-  outbound network** — the page loads zero external resources, so a replay works
-  with the network cable out. It is the backup demo.
-
-The frames inside a recording are *renders of the SceneGraph*. The user's camera
-frames were discarded at perception and never reach the recorder.
+> `PRIVACY: frames are processed in memory and discarded; only the SceneGraph
+> (structured text, no pixels) leaves this device.`
 
 ## Configuration
 
@@ -224,13 +151,13 @@ Copy `.env.example` to `.env` (gitignored; there are no secrets in the code).
 | variable | default | meaning |
 | --- | --- | --- |
 | `SKOPOS_PROVIDER` | `mock` | `mock` \| `reactor` \| `runware` |
-| `SKOPOS_PERCEPTION` | `mock` | `mock` \| `claude` |
+| `SKOPOS_SAMPLES` | `20000` | campaign size |
+| `SKOPOS_SEED` | `20260912` | seed; a campaign is reproducible from it |
 | `REACTOR_API_KEY` | — | see `docs/PROVIDER_SWAP.md` |
 | `RUNWARE_API_KEY` | — | fallback provider |
-| `ANTHROPIC_API_KEY` | — | for `SKOPOS_PERCEPTION=claude` |
 | `SKOPOS_DEBUG_KEEP_FRAMES` | `0` | **debug only**; `1` writes raw frames to disk |
 
-Going from mock to live: **`docs/PROVIDER_SWAP.md`** is a ten-minute checklist.
+Going live: **`docs/PROVIDER_SWAP.md`** is a ten-minute checklist.
 
 ## Licence
 
