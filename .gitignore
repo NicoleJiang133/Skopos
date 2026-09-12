@@ -9,3 +9,5 @@ runs/*
 debug_frames/
 .uvicorn.out
 .uvicorn.err
+skopos-internals.html
+*.export.html

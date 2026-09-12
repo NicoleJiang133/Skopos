@@ -674,7 +674,12 @@ function render(d){
   drawCem(d.cem);
 }
 
+// A standalone export bakes the snapshot into the page as window.__SKOPOS_DATA__,
+// so the file opens offline with every chart intact and makes no requests.
+const EMBEDDED = (typeof window.__SKOPOS_DATA__ !== "undefined");
+
 async function load(){
+  if(EMBEDDED){ render(window.__SKOPOS_DATA__); return; }
   try{
     const r = await fetch("/api/internals");
     render(await r.json());
@@ -683,11 +688,16 @@ async function load(){
   }
 }
 $("btn-refresh").onclick = load;
+if(EMBEDDED){
+  $("btn-refresh").style.display = "none";
+  const back = document.querySelector('header a.badge');
+  if(back) back.remove();
+}
 let rt; window.addEventListener("resize", () => {
   clearTimeout(rt); rt = setTimeout(() => { if(DATA) render(DATA); }, 150);
 });
 load();
-setInterval(load, 4000);   // the bandit is live; keep up with it
+if(!EMBEDDED) setInterval(load, 4000);   // the bandit is live; keep up with it
 </script>
 </body>
 </html>
