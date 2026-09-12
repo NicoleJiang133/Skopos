@@ -6,9 +6,7 @@ import {
   type SceneObjectLite,
   type Strategy,
 } from '../play/actionPrompts'
-import { InventoryForm } from '../play/InventoryForm'
 import { tagPosition } from '../play/layout'
-import type { VenueInventory } from '../state/schema'
 import { useStore } from '../state/store'
 
 const DEMO_OBJECTS: SceneObjectLite[] = [
@@ -42,7 +40,6 @@ const STRATEGIES: { id: Strategy; label: string }[] = [
 ]
 
 type Phase = 'walking' | 'prompt' | 'confirmed'
-type Stage = 'play' | 'inventory'
 
 const initialCounts = (): Record<Strategy, number> => ({
   direct: 0,
@@ -59,23 +56,13 @@ export function Play() {
   const logInteraction = useStore((s) => s.logInteraction)
   const pushEvent = useStore((s) => s.pushEvent)
   const exportInteractions = useStore((s) => s.exportInteractions)
-  const setInventory = useStore((s) => s.setInventory)
   const objects = scan?.objects.length ? scan.objects : DEMO_OBJECTS
   const [index, setIndex] = useState(0)
   const [phase, setPhase] = useState<Phase>('walking')
-  const [stage, setStage] = useState<Stage>('play')
-  const [doneInventory, setDoneInventory] = useState<VenueInventory | null>(null)
   const [promptShownAt, setPromptShownAt] = useState(0)
   const [confirmation, setConfirmation] = useState('')
   const [counts, setCounts] = useState<Record<Strategy, number>>(initialCounts)
   const currentObject = objects[index]
-  const inventoryObjects = objects.map((object) => ({
-    id: object.id,
-    label: object.label,
-    material: object.material ?? '',
-    confidence: object.confidence ?? 0,
-    hazards: object.hazards ?? [],
-  }))
   const currentPrompt = useMemo(
     () => (currentObject ? promptFor(currentObject) : null),
     [currentObject],
@@ -133,12 +120,9 @@ export function Play() {
   const reset = () => {
     setIndex(0)
     setPhase('walking')
-    setStage('play')
-    setDoneInventory(null)
     setPromptShownAt(0)
     setConfirmation('')
     setCounts(initialCounts())
-    setInventory(null)
   }
 
   return (
@@ -184,27 +168,11 @@ export function Play() {
         </div>
       )}
 
-      {doneInventory ? (
-        <InventoryDone
-          inventory={doneInventory}
-          counts={counts}
-          onEnter={enterBackend}
-          onExport={exportInteractions}
-        />
-      ) : stage === 'inventory' ? (
-        <InventoryForm
-          objects={inventoryObjects}
-          onBack={() => setStage('play')}
-          onSubmit={(inventory) => {
-            setInventory(inventory)
-            setDoneInventory(inventory)
-          }}
-        />
-      ) : isSummary ? (
+      {isSummary ? (
         <Summary
           counts={counts}
-          onContinue={() => setStage('inventory')}
           onPlayAgain={reset}
+          onEnter={enterBackend}
           onExport={exportInteractions}
         />
       ) : (
@@ -250,13 +218,13 @@ export function Play() {
 
 function Summary({
   counts,
-  onContinue,
   onPlayAgain,
+  onEnter,
   onExport,
 }: {
   counts: Record<Strategy, number>
-  onContinue: () => void
   onPlayAgain: () => void
+  onEnter: () => void
   onExport: () => void
 }) {
   const max = Math.max(1, ...Object.values(counts))
@@ -282,49 +250,11 @@ function Summary({
         ))}
       </div>
       <div style={summaryActions}>
-        <button onClick={onContinue} style={summaryPrimary}>
-          Continue → venue inventory
+        <button onClick={onEnter} style={summaryPrimary}>
+          Enter the live venue
         </button>
         <button onClick={onPlayAgain} style={summarySecondary}>
           Play again
-        </button>
-        <button onClick={onExport} style={exportButton}>
-          Export ground truth
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function InventoryDone({
-  inventory,
-  counts,
-  onEnter,
-  onExport,
-}: {
-  inventory: VenueInventory
-  counts: Record<Strategy, number>
-  onEnter: () => void
-  onExport: () => void
-}) {
-  const topStrategy = STRATEGIES.reduce((best, strategy) =>
-    counts[strategy.id] > counts[best.id] ? strategy : best,
-  )
-  const decisions = Object.values(counts).reduce((sum, count) => sum + count, 0)
-
-  return (
-    <div className="sk-panel" style={summaryCard}>
-      <div style={summaryTitle}>Your venue is ready</div>
-      <div style={doneLines}>
-        <div>
-          {inventory.tables} tables · {inventory.chairs} seats · capacity {inventory.capacity}
-        </div>
-        <div>robot style: {topStrategy.label}</div>
-        <div>{decisions} decisions recorded</div>
-      </div>
-      <div style={summaryActions}>
-        <button onClick={onEnter} style={summaryPrimary}>
-          Enter the live venue
         </button>
         <button onClick={onExport} style={exportButton}>
           Export ground truth
@@ -479,14 +409,6 @@ const summaryCard = {
 const summaryTitle = {
   color: 'var(--sk-text)',
   font: '22px var(--sk-font-display)',
-}
-const doneLines = {
-  display: 'flex',
-  flexDirection: 'column' as const,
-  gap: 8,
-  marginTop: 18,
-  color: 'var(--sk-text-dim)',
-  font: '11px var(--sk-font-mono)',
 }
 const bars = {
   display: 'flex',

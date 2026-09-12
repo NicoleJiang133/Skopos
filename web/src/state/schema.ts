@@ -3,18 +3,6 @@ export const GRID_SCHEMA_VERSION = 1
 
 export type ScreenId = 'landing' | 'setup' | 'live' | 'play'
 
-export interface VenueInventory {
-  venueType: 'cafe' | 'restaurant' | 'bar' | 'office' | 'retail' | 'warehouse' | 'home' | 'other'
-  tables: number
-  chairs: number
-  capacity: number
-  areaSqm: number
-  zones: number
-  staffOnShift: number
-  peakHour: 'morning' | 'lunch' | 'afternoon' | 'dinner' | 'late'
-  notes: string
-}
-
 export type ObjectType = 'bar' | 'table' | 'chair' | 'plant' | 'stage' | 'dock'
 
 export interface VenueObject {
