@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ScanResult } from '../backend/handoff'
 import { astar, type Cell } from '../planner/astar'
 import type { BedState } from '../prompts/types'
 import {
@@ -30,7 +31,7 @@ export interface EventEntry {
 export interface Interaction {
   at: number
   screen: ScreenId
-  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive' | 'enter_backend'
+  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive' | 'enter_backend' | 'action'
   detail: Record<string, string | number>
 }
 
@@ -40,6 +41,7 @@ interface State {
   bedNudge: string | null
   live: boolean
   venuePhoto: Blob | null
+  scan: ScanResult | null
   grid: VenueGrid
   robot: Cell
   heading: 0 | 1 | 2 | 3
@@ -57,6 +59,7 @@ interface State {
   nudgeBed: (fragment: string, state?: BedState) => void
   setLive: (live: boolean) => void
   setVenuePhoto: (b: Blob | null) => void
+  setScan: (scan: ScanResult | null) => void
   logInteraction: (kind: Interaction['kind'], detail: Interaction['detail']) => void
   exportInteractions: () => void
   addObject: (type: ObjectType, x: number, y: number) => void
@@ -183,6 +186,7 @@ export const useStore = create<State>((set, get) => ({
   bedNudge: null,
   live: true,
   venuePhoto: null,
+  scan: null,
   grid: initialGrid,
   robot: initialRobot,
   heading: 0,
@@ -216,6 +220,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setLive: (live) => set({ live }),
+
+  setScan: (scan) => set({ scan }),
 
   setVenuePhoto: (venuePhoto) => {
     if (venuePhoto) {
