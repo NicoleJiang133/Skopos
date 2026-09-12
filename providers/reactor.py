@@ -35,21 +35,26 @@ Two SDK details that shape the code below:
   earlier version of this file reached for a private `reactor._loop`; it does
   not need to and no longer does.
 
-PRIVACY — READ THIS BEFORE ENABLING REFERENCE IMAGES
------------------------------------------------------
-Skopos's headline claim is that no pixels leave the device. Uploading a
-photograph of the real room as a generation reference **breaks that claim**: the
-photo is pixels, and it goes to Reactor.
+PRIVACY — HOW THE MODEL GETS A LAYOUT REFERENCE
+-----------------------------------------------
+A text prompt is a lossy channel for geometry, so the model wants a reference
+image. There are two ways to give it one, and they are not variations of the
+same thing.
 
-So it is opt-in and off by default. With `SKOPOS_REFERENCE_IMAGES` unset, the
-only thing that ever leaves is the scene graph, exactly as the README says. Set
-it and the app says so, loudly, in the provider badge and the privacy panel —
-because the alternative is a privacy claim on screen that is not true.
+`SKOPOS_REFERENCE=rendered` (the default) draws the reference from the scene
+graph — see providers/reference.py. The image is a pure function of the scene
+graph, and the scene graph is already the one artefact that leaves the device.
+So it discloses **nothing new**: no camera contributed to it, and you could
+redraw it from the JSON in the privacy panel by hand. The headline claim holds
+and the banner is unchanged.
 
-If you want the visual anchoring without the privacy cost, point it at a
-*rendered* reference (the mock provider's own plan view, or any synthetic image
-derived from the scene graph) rather than a photo. Same mechanism, no real
-pixels.
+`SKOPOS_REFERENCE=photo` uploads the files named in SKOPOS_REFERENCE_IMAGES.
+Those are real pixels and they go to a third party, which **breaks** the claim.
+It is therefore never the default, and when it is on the startup log, the
+provider health, the privacy panel and the banner all say so rather than
+continuing to assert something untrue. selftest.py asserts that flip.
+
+`SKOPOS_REFERENCE=none` sends no image at all.
 """
 from __future__ import annotations
 
@@ -81,7 +86,14 @@ START_COMMAND = os.getenv("REACTOR_START_COMMAND", "start")
 IMAGE_COMMAND = os.getenv("REACTOR_IMAGE_COMMAND", "set_image")
 IMAGE_FIELD = os.getenv("REACTOR_IMAGE_FIELD", "image")
 
-# Comma-separated paths. Off by default; see the privacy note above.
+# How the model gets a layout reference:
+#   "rendered" (default) — draw it from the scene graph. No camera involved, and
+#                          the scene graph already leaves the device, so nothing
+#                          new is disclosed. The privacy claim survives.
+#   "photo"             — upload the files in SKOPOS_REFERENCE_IMAGES. These are
+#                          real pixels and the app says so, loudly, everywhere.
+#   "none"              — text prompt only.
+REFERENCE_MODE = os.getenv("SKOPOS_REFERENCE", "rendered").strip().lower()
 REFERENCE_IMAGES = [
     p.strip() for p in os.getenv("SKOPOS_REFERENCE_IMAGES", "").split(",") if p.strip()
 ]
@@ -158,7 +170,11 @@ class ReactorProvider(WorldModelProvider):
 
         self.live = False
         self.status = "not started"
-        self.reference_images = list(REFERENCE_IMAGES)
+        self.reference_mode = REFERENCE_MODE if REFERENCE_MODE in (
+            "rendered", "photo", "none") else "rendered"
+        self.reference_images = list(REFERENCE_IMAGES) if self.reference_mode == "photo" else []
+        self._ref_scene: Any = None
+        self._ref_fingerprint: Optional[str] = None
 
         if not self.api_key:
             self.status = "no REACTOR_API_KEY — serving mock frames"
@@ -172,11 +188,14 @@ class ReactorProvider(WorldModelProvider):
             log.warning("pip install reactor-sdk pillow numpy; serving MOCK frames.")
             return
 
-        if self.reference_images:
+        if self.reference_mode == "photo" and self.reference_images:
             log.warning(
-                "PRIVACY: SKOPOS_REFERENCE_IMAGES is set. %d image(s) will be uploaded "
-                "to Reactor. Pixels WILL leave this device. %s",
+                "PRIVACY: SKOPOS_REFERENCE=photo. %d photograph(s) will be uploaded to "
+                "Reactor. Real pixels WILL leave this device. %s",
                 len(self.reference_images), self.reference_images)
+        elif self.reference_mode == "rendered":
+            log.info("reference mode: rendered from the scene graph — no camera "
+                     "pixels leave this device")
         self._start()
 
     # ------------------------------------------------------------ connection
@@ -264,13 +283,65 @@ class ReactorProvider(WorldModelProvider):
         # Hold the loop open for the life of the process.
         await asyncio.Event().wait()
 
+    def set_reference_scene(self, sg: SceneGraph) -> None:
+        """Adopt a new base room and re-upload its rendered reference.
+
+        Fingerprinted so an unchanged room is not re-uploaded on every call.
+        """
+        self._ref_scene = sg
+        if self.reference_mode != "rendered":
+            return
+        fp = repr(scene_to_prompt(sg, RenderRequest()))
+        if fp == self._ref_fingerprint:
+            return
+        self._ref_fingerprint = fp
+        loop, reactor = self._loop, self._reactor
+        if loop is None or reactor is None or loop.is_closed():
+            return   # not connected yet; _main uploads it once READY
+        try:
+            asyncio.run_coroutine_threadsafe(self._upload_rendered(reactor, sg), loop)
+        except Exception as exc:            # noqa: BLE001
+            log.warning("rendered reference upload could not be scheduled: %s", exc)
+
+    async def _upload_rendered(self, reactor: Any, sg: Any) -> None:
+        """Draw the reference from the scene graph and hand it to the model.
+
+        The image is a pure function of the scene graph, which already crosses
+        the boundary, so this discloses nothing further. That is the point of
+        preferring it to a photograph.
+        """
+        from .reference import describe, render_reference
+
+        png = render_reference(sg)
+        if png is None:
+            log.error("Pillow is not installed; cannot render a reference image.")
+            return
+        try:
+            ref = await reactor.upload_file(png, name="scene_reference.png",
+                                            mime_type="image/png")
+        except Exception as exc:            # noqa: BLE001
+            log.error("rendered reference upload failed: %s", exc)
+            return
+        try:
+            await reactor.send_command(IMAGE_COMMAND, {IMAGE_FIELD: ref})
+            self._uploaded = ["scene_reference.png (rendered)"]
+            log.info("sent %s with a rendered reference — %s",
+                     IMAGE_COMMAND, describe(sg))
+        except Exception as exc:            # noqa: BLE001
+            log.error("%s failed — check the model's schema for the right command "
+                      "and field name: %s", IMAGE_COMMAND, exc)
+
     async def _upload_references(self, reactor: Any) -> None:
         """Upload the configured reference images and hand them to the model.
 
         Opt-in: with SKOPOS_REFERENCE_IMAGES unset this does nothing and no
         pixels leave the device.
         """
-        if not self.reference_images:
+        if self.reference_mode == "rendered":
+            if self._ref_scene is not None:
+                await self._upload_rendered(reactor, self._ref_scene)
+            return
+        if self.reference_mode == "none" or not self.reference_images:
             return
         refs = []
         for path in self.reference_images:
@@ -375,8 +446,11 @@ class ReactorProvider(WorldModelProvider):
             "frames_in": n,
             "last_frame_age_s": round(time.time() - at, 2) if at else None,
             "reference_images": list(self._uploaded),
-            # Surfaced so the UI can contradict the privacy banner when it must.
-            "pixels_uploaded": bool(self._uploaded),
+            "reference_mode": self.reference_mode,
+            # Only a PHOTOGRAPH counts as pixels leaving the device. A rendered
+            # reference is a function of the scene graph, which already left, so
+            # it discloses nothing new and the banner stays as it was.
+            "pixels_uploaded": bool(self._uploaded) and self.reference_mode == "photo",
             "schema_known": self._schema is not None,
         }
 

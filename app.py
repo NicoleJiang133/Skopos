@@ -390,6 +390,11 @@ class Demo:
         self.scene = scene
         if self.bandit is not None:
             self.bandit.set_scene(scene)
+        # Providers that condition on an image need the unperturbed room.
+        try:
+            self.provider.set_reference_scene(scene)
+        except Exception:                   # noqa: BLE001 — never break a run
+            log.exception("provider.set_reference_scene failed")
 
     def run_campaign(self, strategy: Optional[str] = None) -> Dict[str, Any]:
         """Blocking. Call from a worker thread."""
@@ -422,6 +427,7 @@ class Demo:
         health = self.provider.health()
         refs = health.get("reference_images") or []
         d["reference_images"] = refs
+        d["reference_mode"] = health.get("reference_mode", "none")
         d["pixels_uploaded"] = bool(health.get("pixels_uploaded"))
         if d["pixels_uploaded"]:
             d["assertion"] = (
@@ -464,6 +470,7 @@ async def _startup() -> None:
     # Privacy assertion, one line, at startup. See privacy.py.
     log.info(startup_assertion())
     log.info("provider=%s samples=%d seed=%d", DEMO.provider.name, DEMO.m, DEMO.seed)
+    DEMO.provider.set_reference_scene(DEMO.scene)
     _h = DEMO.provider.health()
     if _h.get("pixels_uploaded"):
         log.warning("PRIVACY: %d reference image(s) uploaded to %s — pixels HAVE "

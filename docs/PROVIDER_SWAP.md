@@ -52,7 +52,12 @@ In `.env`:
 SKOPOS_PROVIDER=reactor
 REACTOR_API_KEY=rk_...
 REACTOR_MODEL=reactor/helios
+SKOPOS_REFERENCE=rendered
 ```
+
+`SKOPOS_REFERENCE=rendered` is the default and keeps the privacy claim intact:
+the reference is drawn from the scene graph, not photographed. Setting it to
+`photo` uploads real pixels and changes what the UI is allowed to claim.
 
 - [ ] **Confirm the model slug.** `reactor/helios` is the example in the docs.
       Do not guess an alternative — ask, or read the model list.
@@ -75,12 +80,13 @@ All are marked `TODO(reactor)` in `providers/reactor.py`.
 - [ ] **The event loop.** `_reactor_loop()` reaches for `reactor._loop` so it
       can schedule commands from the render thread. Replace with whatever the
       SDK exposes publicly.
-- [ ] **Conditioning — the one that matters for quality.** We currently drive
-      the model **prompt-only**, which throws away the geometry the surrogate
-      actually scores on. If Reactor supports image or video conditioning, feed
-      it the mock provider's SVG rendered to PNG as a layout hint. Until then,
-      say "prompt-conditioned" out loud; do not imply the render is faithful to
-      the scene graph.
+- [ ] **Conditioning.** This is now wired: `SKOPOS_REFERENCE=rendered` (the
+      default) draws a layout reference from the scene graph and uploads it with
+      `upload_file()` → `FileRef` → `send_command(IMAGE_COMMAND, ...)`. Confirm
+      from the schema that your model's image command and field are really
+      `set_image` / `image`, and override `REACTOR_IMAGE_COMMAND` /
+      `REACTOR_IMAGE_FIELD` if not. Probe it first with
+      `--reference` to see the upload accepted before trusting the app path.
 
 ### 3. Run it (1 min)
 

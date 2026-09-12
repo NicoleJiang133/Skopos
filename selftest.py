@@ -309,6 +309,40 @@ def _t_refs() -> str:
     return "banner flips to: " + dirty["assertion"][:64] + "..."
 
 
+@check("a rendered reference discloses nothing and keeps the privacy claim")
+def _t_rendered() -> str:
+    """The default reference mode draws the layout from the scene graph instead
+    of uploading a photo. Being derived from data that already left the device,
+    it must NOT trip the pixels-left banner — unlike a photograph."""
+    from providers.reference import render_reference
+
+    png = render_reference(DEMO_ROOM)
+    assert png is not None, "Pillow missing; cannot render a reference"
+    assert png[1:4] == b"PNG", "not a PNG"
+    assert render_reference(DEMO_ROOM) == png, "reference render is not deterministic"
+
+    # a different room must produce a different reference, or it encodes nothing
+    from dataclasses import replace as dc_replace
+    dark = dc_replace(DEMO_ROOM, lighting=0.12, clutter=7)
+    assert render_reference(dark) != png, "reference does not track the scene"
+
+    class _Rendered:
+        name = "reactor"
+        live = True
+        def health(self):
+            return {"provider": "reactor", "live": True, "ok": True,
+                    "reference_images": ["scene_reference.png (rendered)"],
+                    "reference_mode": "rendered", "pixels_uploaded": False}
+
+    demo = app.Demo()
+    demo.provider = _Rendered()
+    st = demo.privacy_state()
+    assert st["pixels_uploaded"] is False
+    assert "no pixels" in st["assertion"], (
+        "a rendered reference must not change the privacy claim: " + st["assertion"])
+    return "{} bytes, deterministic, tracks the scene, banner unchanged".format(len(png))
+
+
 @check("no placeholder metrics are unlabelled")
 def _t17() -> str:
     """Constraint 3: anything provisional must be named placeholder_."""

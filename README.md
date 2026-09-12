@@ -154,6 +154,35 @@ there, which no amount of moving furniture fixes.
 
 ## Privacy
 
+### Layout conditioning without sending a photograph
+
+A world model conditioned on text alone throws away the geometry the surrogate
+scores on, so it wants a reference image. The obvious way to get one — photograph
+the room — sends pixels to a third party and destroys the claim below.
+
+So Skopos **draws the reference instead** (`providers/reference.py`): an overhead
+plan of the room, objects sized by their real radius and tinted by what the
+engine cares about (reflective cold and bright, low-contrast near-black), with
+the robot-to-target line drawn in.
+
+The important property is not that it is "synthetic". It is that the image is a
+**pure function of the scene graph**, and the scene graph is already the one
+artefact that leaves the device — so it discloses *nothing new*. No camera
+contributed to it, and you could redraw it by hand from the JSON in the privacy
+panel. Uploading it is not a weaker version of uploading a photo; it is a
+different thing.
+
+| `SKOPOS_REFERENCE` | what is uploaded | privacy claim |
+| --- | --- | --- |
+| `rendered` *(default)* | a plan drawn from the scene graph | **holds** — zero additional information crosses the boundary |
+| `photo` | the files in `SKOPOS_REFERENCE_IMAGES` | **broken**, and the app says so in the log, the provider health, the privacy panel and the banner |
+| `none` | nothing | holds |
+
+The self-test asserts both directions: a rendered reference leaves the banner
+alone, and a photograph flips it.
+
+### The rest
+
 Frames are processed in memory and discarded. Only the scene graph — structured
 text — crosses a network boundary, and the UI shows the exact payload live next
 to a counter for frames processed, frames discarded, frames written to disk and

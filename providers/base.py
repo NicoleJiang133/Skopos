@@ -58,6 +58,14 @@ class WorldModelProvider(ABC):
     def render(self, sg: SceneGraph, req: RenderRequest) -> Frame:
         ...
 
+    def set_reference_scene(self, sg: SceneGraph) -> None:
+        """The base room changed; update any conditioning derived from it.
+
+        No-op for providers that do not condition on an image. Called with the
+        *unperturbed* scene, which `render()` cannot identify on its own.
+        """
+        return None
+
     def health(self) -> Dict[str, Any]:
         return {"provider": self.name, "live": self.live, "ok": True}
 
