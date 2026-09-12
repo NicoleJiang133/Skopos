@@ -1,13 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../state/store'
 import { CTA } from '../hud/HudChrome'
+import { enterBackend, scanVenue } from '../backend/handoff'
+import { useStore } from '../state/store'
 
 export function Landing() {
   const goto = useStore((s) => s.goto)
   const venuePhoto = useStore((s) => s.venuePhoto)
   const setVenuePhoto = useStore((s) => s.setVenuePhoto)
+  const logInteraction = useStore((s) => s.logInteraction)
+  const pushEvent = useStore((s) => s.pushEvent)
   const inputRef = useRef<HTMLInputElement>(null)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [handoff, setHandoff] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle')
+  const [handoffMessage, setHandoffMessage] = useState('')
+
+  const enterVenue = async () => {
+    if (!venuePhoto || handoff === 'scanning' || handoff === 'success') return
+    setHandoff('scanning')
+    setHandoffMessage('')
+    const name = (venuePhoto as File).name ?? 'photo'
+    logInteraction('enter_backend', { bytes: venuePhoto.size, name })
+    try {
+      const result = await scanVenue(venuePhoto)
+      const message = `Found ${result.objects.length} objects in your venue — entering…`
+      setHandoffMessage(message)
+      setHandoff('success')
+      pushEvent(message)
+      window.setTimeout(enterBackend, 800)
+    } catch (error) {
+      setHandoffMessage(error instanceof Error ? error.message : String(error))
+      setHandoff('error')
+    }
+  }
 
   useEffect(() => {
     if (!venuePhoto) {
@@ -54,7 +78,11 @@ export function Landing() {
           style={{ display: 'none' }}
           onChange={(event) => {
             const file = event.target.files?.[0]
-            if (file) setVenuePhoto(file)
+            if (file) {
+              setHandoff('idle')
+              setHandoffMessage('')
+              setVenuePhoto(file)
+            }
           }}
         />
         <button
@@ -77,7 +105,7 @@ export function Landing() {
           }}
         >
           {venuePhoto
-            ? 'Step 2 — enter and play as the robot.'
+            ? 'Step 2 — enter and play as the robot in your venue.'
             : 'Step 1 — upload a photo of your physical venue. We build your world from it.'}
         </div>
         {photoUrl && (
@@ -99,10 +127,68 @@ export function Landing() {
           </div>
         )}
         <div style={{ marginTop: 24 }}>
-          <CTA disabled={!venuePhoto} onClick={() => goto('setup')}>
-            {venuePhoto ? 'Enter your venue' : 'Set up this venue'}
+          <CTA
+            disabled={!venuePhoto || handoff === 'scanning' || handoff === 'success'}
+            onClick={enterVenue}
+          >
+            {!venuePhoto
+              ? 'Set up this venue'
+              : handoff === 'scanning'
+                ? 'Building your world…'
+                : 'Enter your venue'}
           </CTA>
         </div>
+        {handoffMessage && (
+          <div
+            style={{
+              marginTop: 10,
+              font: '11px var(--sk-font-mono)',
+              color: handoff === 'error' ? 'var(--sk-amber)' : 'var(--sk-text-dim)',
+            }}
+          >
+            {handoffMessage}
+          </div>
+        )}
+        {handoff === 'error' && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 12,
+              marginTop: 10,
+              font: '11px var(--sk-font-mono)',
+            }}
+          >
+            <button
+              onClick={enterVenue}
+              style={{
+                border: '1px solid var(--sk-amber)',
+                background: 'transparent',
+                color: 'var(--sk-amber)',
+                padding: '5px 9px',
+                font: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => goto('setup')}
+              style={{
+                border: 0,
+                padding: 0,
+                background: 'transparent',
+                color: 'var(--sk-text-dim)',
+                font: 'inherit',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+              }}
+            >
+              Open Setup instead
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

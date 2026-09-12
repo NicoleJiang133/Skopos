@@ -30,7 +30,7 @@ export interface EventEntry {
 export interface Interaction {
   at: number
   screen: ScreenId
-  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive'
+  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive' | 'enter_backend'
   detail: Record<string, string | number>
 }
 

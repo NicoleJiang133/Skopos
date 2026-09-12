@@ -18,6 +18,22 @@ session, so the page releases its session on unload (`/api/session/:id` beacon) 
 Without a key, or if the stream fails, the bed falls back to a procedural world driven by the same
 prompt-program state machine (`bed: procedural`).
 
+## Backend handoff
+
+When a venue photo is submitted, Landing posts it to the game backend and then opens the backend
+page. Set `VITE_BACKEND_URL` to override the handoff URL and `VITE_BACKEND_SCAN_BASE` to override
+the scan API base. In development, scans use the `/backend` Vite proxy to
+`http://127.0.0.1:8000`.
+
+```sh
+git clone -b local-build https://github.com/msimakhov-star/Skopos.git
+cd Skopos
+./run.sh
+```
+
+The backend requirements pin `onnxruntime==1.30.0`, which does not exist on PyPI for Python 3.10;
+the local setup installs it unpinned.
+
 ## Layout
 
 - `src/design/tokens.css` + `tokens.meta.json` — code-layer tokens, also feed the style bible
