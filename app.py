@@ -52,6 +52,23 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 
+# Load .env BEFORE any os.getenv below runs, and before build_provider() imports
+# a provider module whose own constants are read at import time. Real environment
+# variables win over the file, which is what you want when overriding for one run.
+_ENV_FILE = ROOT / ".env"
+if _ENV_FILE.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_ENV_FILE, override=False)
+        log.info("loaded configuration from %s", _ENV_FILE)
+    except ImportError:      # pinned in requirements.txt, but never hard-fail on it
+        for _line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+        log.info("loaded configuration from %s (built-in parser)", _ENV_FILE)
+
 DEFAULT_M = int(os.getenv("SKOPOS_SAMPLES", "20000"))
 DEFAULT_SEED = int(os.getenv("SKOPOS_SEED", "20260912"))
 ELITE_K = 12
