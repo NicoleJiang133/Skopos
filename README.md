@@ -33,7 +33,8 @@ No API keys, no network, no npm. `python selftest.py` checks every claim below.
 - **`bandit.py`** is a contextual bandit (LinUCB) over four task strategies,
   adapting online as the room changes.
 - **`app.py`** is FastAPI + one WebSocket; **`static/index.html`** is the entire
-  front end — vanilla JS, no build step, no external requests.
+  front end — vanilla JS, no build step, no external requests. A second page,
+  **`/internals`**, shows the machinery itself.
 
 ```
 scan ──▶ SceneGraph ──┬──▶ surrogate ──▶ campaign ──▶ readiness + hazards
@@ -97,6 +98,27 @@ You can watch this fire. Run the adversarial search, then select
 **adversarial (CEM)** in the archetype dropdown: the converged prior sits far
 from the proposal, ESS collapses to around 50, and the verdict is withheld.
 Measured, in `selftest.py`, not asserted.
+
+## The engine room — `/internals`
+
+The demo page shows conclusions. **[`/internals`](http://127.0.0.1:8077/internals)**
+shows the machinery that produced them, on one page, every chart drawn on a raw
+`<canvas>` with no plotting library:
+
+| panel | what it shows |
+| --- | --- |
+| **pipeline** | 1 scene graph → 20,000 configurations → 20,000 surrogate calls → 12 world-model calls. The ratio that justifies the whole design, with live counters |
+| **monte carlo** | the severity of every sampled room as a histogram, with the engine's own `FAIL_THRESHOLD` drawn on it and the failing mass in red |
+| **convergence** | P(failure) as samples accumulate, with its 95% binomial interval narrowing as 1/√n — precision being bought, and the price visible |
+| **perturbation space** | where the mug actually landed across ~1,200 sampled rooms, red for failed. A continuous space with nothing to enumerate |
+| **what drives failure** | failure rate against each perturbation axis, measured off the campaign's own samples. The lighting panel is the finding: ~100% failure in the darkest rooms against ~23% in the brightest |
+| **importance weighting** | the log-weight distribution per archetype (log-scaled counts, so the tail is visible), ESS bars against the floor, and how much of each estimate rests on its top 50 samples |
+| **contextual bandit** | the UCB decomposition (solid = θ·x, faint = the exploration bonus) and a per-feature heatmap of θᵢ·xᵢ. The entire model is five numbers per arm, and they are on screen |
+| **adversarial search** | the CEM failure rate climbing per iteration, and the proposal's own parameters before and after — `light_mean` 0.68 → 0.06, discovered, not told |
+
+Nothing on that page re-implements the engine. Every number is derived from
+engine outputs — severities, thetas, weights — because a second copy of the
+failure model would drift from the first.
 
 ## What you can do in the UI
 

@@ -269,14 +269,16 @@ def _t15() -> str:
 def _t16() -> str:
     """Replay is the backup demo and must survive with the network down."""
     import re
-    html = open("static/index.html", encoding="utf-8").read()
+    html = "\n".join(open("static/" + f, encoding="utf-8").read()
+                     for f in ("index.html", "internals.html"))
     refs = re.findall(r'(?:src|href)\s*=\s*"([^"]*)"', html)
     external = [r for r in refs if r.startswith("http") or r.startswith("//")]
     assert not external, "external references: {}".format(external)
     urls = [u for u in re.findall(r'https?://[^\s"\'<>)]+', html)
             if "127.0.0.1" not in u and "localhost" not in u]
     assert not urls, "hard-coded URLs: {}".format(urls)
-    return "no src/href attributes at all; every style and script is inline"
+    return ("every style and script inline; {} link(s), all relative: {}".format(
+        len(refs), refs) if refs else "no src/href attributes at all")
 
 
 @check("uploading reference images forces the privacy banner to contradict itself")

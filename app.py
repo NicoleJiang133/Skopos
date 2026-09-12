@@ -509,6 +509,20 @@ async def api_campaign(
     return JSONResponse(report)
 
 
+@app.get("/internals")
+async def internals_page() -> FileResponse:
+    """The engine room: the Monte Carlo, the weights and the bandit's own model."""
+    return FileResponse(STATIC_DIR / "internals.html")
+
+
+@app.get("/api/internals")
+async def api_internals() -> JSONResponse:
+    """Everything under the surface, shaped for plotting. Read-only."""
+    import internals
+    data = await asyncio.to_thread(internals.snapshot, DEMO)
+    return JSONResponse(data)
+
+
 @app.get("/api/scene")
 async def api_scene() -> JSONResponse:
     """The exact payload that would leave the device. Structured text, no pixels."""
