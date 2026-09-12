@@ -62,9 +62,13 @@ scan ──▶ SceneGraph ──┬──▶ surrogate ──▶ campaign ──
    stylised plan view and is what you see unless you supply credentials. It is
    labelled `MOCK RENDER / not a world model` inside the image itself.
 4. **The Reactor adapter has never run against the live API.** It is written
-   against the public docs at <https://docs.reactor.inc>, read at build time.
-   Facts from the docs are marked `[docs]` in the source; every inference is
-   marked `TODO(reactor)`. Its `health()` says so out loud.
+   against `reactor-sdk` 1.5.1, whose API was read off the installed package
+   rather than guessed, so the shape is right — but with no key we could not
+   execute it. What is unverified is what needs a key: the model slug, the
+   command names your model declares, and the frame rate.
+   `scripts/reactor_probe.py` answers all three in one run. The adapter's
+   `health()` says it has never run live, and the provider badge never reads
+   `live` while mock frames are on screen.
 5. **The demo room is hand-written**, not scanned. `DEMO_ROOM` in `engine.py` is
    six objects a human typed in. No vision model ran.
 6. **The readiness thresholds are a judgement call**, not a result:

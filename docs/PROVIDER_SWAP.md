@@ -29,20 +29,23 @@ raise `ELITE_K`, you are multiplying your provider bill by the same factor.
 
 ## Reactor (reactor.inc) — the headline path
 
-The adapter in `providers/reactor.py` was written against the public docs at
-<https://docs.reactor.inc>, read at build time (12 Sept 2026). It has **not**
-been executed against the live API — we had no key. Facts taken from the docs
-are marked `[docs]` in the source; our inferences are marked `TODO(reactor)`.
+The adapter in `providers/reactor.py` is written against **`reactor-sdk` 1.5.1**,
+whose API was read directly off the installed package rather than inferred. It
+has **not** been executed against the live API — we had no key — so what is
+unverified is only what needs one: the model slug, the command names your model
+declares, and whether frames arrive at a useful rate.
 
 ### 0. Before you start (1 min)
 
 ```bash
-pip install reactor-sdk pillow          # pillow is NOT in requirements.txt
+pip install -r requirements-reactor.txt   # reactor-sdk, pillow, numpy
 cp .env.example .env
 ```
 
-Pillow is needed only to encode the SDK's numpy frames to PNG. If you would
-rather not add it, switch the UI to a binary WebSocket frame channel instead.
+These are deliberately out of the default `requirements.txt`: the mock path must
+keep running with no dependencies at all. Pillow encodes the SDK's numpy frames
+to PNG and draws the rendered reference; numpy is what the frame callback hands
+you.
 
 ### 1. Credentials (1 min)
 
@@ -66,20 +69,34 @@ the reference is drawn from the scene graph, not photographed. Setting it to
       mint, that is `POST https://api.reactor.inc/tokens`; pass the resulting
       JWT instead of the raw key.
 
-### 2. Resolve the open TODOs (5 min)
+### 2. Probe it, then set the command names (4 min)
 
-All are marked `TODO(reactor)` in `providers/reactor.py`.
+Run the probe before touching the app. It answers what the SDK alone cannot, and
+never prints your key:
 
-- [ ] **The output handle.** The docs show `@output.on_frame` but not where
-      `output` comes from. Find it (an attribute on `Reactor`? an awaited call?
-      a `trackReceived` event carrying the `"main_video"` track?) and replace
-      `output = getattr(reactor, "output", None)`.
-- [ ] **Mid-stream prompt updates.** We assume a second
-      `send_command("set_prompt", …)` re-steers a live session. Confirm, and
-      confirm the stop command.
-- [ ] **The event loop.** `_reactor_loop()` reaches for `reactor._loop` so it
-      can schedule commands from the render thread. Replace with whatever the
-      SDK exposes publicly.
+```bash
+python scripts/reactor_probe.py --seconds 20
+python scripts/reactor_probe.py --schema-out schema.json      # full command list
+```
+
+It prints the model's **own** command schema via `request_schema()`. Match `.env`
+to what you see:
+
+```
+REACTOR_PROMPT_COMMAND=set_prompt     REACTOR_PROMPT_FIELD=prompt
+REACTOR_IMAGE_COMMAND=set_image       REACTOR_IMAGE_FIELD=image
+REACTOR_START_COMMAND=start
+```
+
+Resolved already, so you do not have to: frames arrive via `@reactor.on_track`
+then `@track.on_frame` (the docs' bare `@output.on_frame` has no `output` handle
+on the client — that guess was wrong and is gone); we create and own the asyncio
+loop, so nothing reaches into `reactor._loop`; and `upload_file()` is called from
+a READY state because it raises `InvalidStateError` before that.
+
+- [ ] **Mid-stream prompt updates.** We assume a second `set_prompt` re-steers a
+      live session rather than needing a restart. Confirm, and confirm the stop
+      command.
 - [ ] **Conditioning.** This is now wired: `SKOPOS_REFERENCE=rendered` (the
       default) draws a layout reference from the scene graph and uploads it with
       `upload_file()` → `FileRef` → `send_command(IMAGE_COMMAND, ...)`. Confirm
@@ -115,8 +132,9 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8077
 | --- | --- |
 | badge stuck on `reactor(fallback:mock)` | no key, SDK not installed, or the background thread raised — read `health().status` |
 | frames arrive then stop | the staleness cut-off in `render()` is 2 s; check the socket, then raise it |
-| `Pillow is not installed` in the log | `pip install pillow` |
-| `TODO(reactor): could not find the frame output handle` | item 1 above, unresolved |
+| `Pillow is not installed` in the log | `pip install -r requirements-reactor.txt` |
+| `InvalidStateError` on upload | something called `upload_file()` before the connection reached READY |
+| the image command is rejected | the model names it something else — read the schema the probe printed |
 | provider bill higher than expected | someone raised `ELITE_K` in `app.py` |
 
 ---
