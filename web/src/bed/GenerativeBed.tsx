@@ -33,6 +33,7 @@ export function GenerativeBed() {
   const [lastPrompt, setLastPrompt] = useState('')
 
   const program = programs[screen]
+  const photoWorld = screen === 'landing' ? null : venuePhoto
 
   // procedural bed always runs underneath as the zero-dependency fallback
   useEffect(() => {
@@ -45,13 +46,13 @@ export function GenerativeBed() {
 
   useEffect(() => {
     const canvas = photoCanvasRef.current
-    if (!venuePhoto || !canvas) {
+    if (!photoWorld || !canvas) {
       setPhotoReady(false)
       return
     }
 
     setPhotoReady(false)
-    const url = URL.createObjectURL(venuePhoto)
+    const url = URL.createObjectURL(photoWorld)
     const image = new Image()
     let stopPhotoBed: (() => void) | undefined
     let cancelled = false
@@ -77,7 +78,7 @@ export function GenerativeBed() {
         URL.revokeObjectURL(url)
       }
     }
-  }, [venuePhoto])
+  }, [photoWorld])
 
   useEffect(() => {
     if (!live) {
@@ -131,7 +132,7 @@ export function GenerativeBed() {
           })
           const s = useStore.getState()
           const prog = programs[s.screen]
-          const photo = s.venuePhoto
+          const photo = s.screen === 'landing' ? null : s.venuePhoto
           if (photo) await handle.prime(photo)
           handle.setPrompt(
             photo ? composePhotoPrompt(s.screen, s.bedState) : prog.composePrompt(s.bedState),
@@ -158,17 +159,21 @@ export function GenerativeBed() {
       setLastPrompt(prompt)
       handleRef.current?.setPrompt(prompt)
     })
-    const base = venuePhoto ? composePhotoPrompt(screen, bedState) : program.composePrompt(bedState)
+    const currentScreen = useStore.getState().screen
+    const base = photoWorld
+      ? composePhotoPrompt(currentScreen, bedState)
+      : program.composePrompt(bedState)
     send(bedNudge ? `${base} ${bedNudge}.` : base, bedState)
-  }, [program, bedState, bedNudge, venuePhoto])
+  }, [program, bedState, bedNudge, photoWorld])
 
   useEffect(() => {
-    if (!handleRef.current || !venuePhoto) return
-    const base = composePhotoPrompt(screen, bedState)
-    const prompt = bedNudge ? `${base} ${bedNudge}.` : base
-    void handleRef.current.anchor(venuePhoto, prompt)
+    if (!handleRef.current || !photoWorld) return
+    const state = useStore.getState()
+    const base = composePhotoPrompt(state.screen, state.bedState)
+    const prompt = state.bedNudge ? `${base} ${state.bedNudge}.` : base
+    void handleRef.current.anchor(photoWorld, prompt)
     useStore.getState().pushEvent('World re-anchored to your venue photo')
-  }, [venuePhoto])
+  }, [photoWorld])
 
   const shown: BedSourceKind = source === 'live' ? 'live' : photoReady ? 'photo' : 'procedural'
 
