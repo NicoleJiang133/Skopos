@@ -39,7 +39,7 @@
        padding:10px;min-height:0}
   .col-left{display:grid;grid-template-rows:minmax(0,2fr) minmax(120px,1fr);
             gap:10px;min-height:0;min-width:0}
-  .col-right{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;min-height:0}
+  .col-right{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:10px;min-height:0}
 
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
          display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
@@ -89,6 +89,21 @@
   .minibar{height:8px;background:#0b0f15;border-radius:2px;overflow:hidden}
   .minibar > i{display:block;height:100%;background:var(--bad);opacity:.85}
 
+  /* bandit bars */
+  .arm{margin-bottom:9px}
+  .arm:last-child{margin-bottom:0}
+  .arm .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+            font:11px/1.3 var(--mono)}
+  .arm .nm{color:var(--fg)}
+  .arm.sel .nm{color:var(--good);font-weight:700}
+  .arm .num{color:var(--dim);white-space:nowrap}
+  .arm .blurb{font-size:10px;color:var(--dimmer);margin:1px 0 3px}
+  .track{height:12px;background:#0b0f15;border:1px solid var(--line);border-radius:3px;
+         overflow:hidden;display:flex}
+  .fill{background:var(--accent);transition:width .3s ease}
+  .fill.bonus{background:rgba(74,168,224,.28);transition:width .3s ease}
+  .arm.sel .fill{background:var(--good)}
+  .arm.sel .fill.bonus{background:rgba(61,220,151,.28)}
   .kv{display:flex;justify-content:space-between;font:11px/1.7 var(--mono);gap:8px;
       align-items:baseline}
   .kv span:first-child{color:var(--dim);flex:0 1 auto}
@@ -107,7 +122,7 @@
 
   @media (max-height:780px){
     .wrap{height:auto;min-height:100vh}
-    .col-left,.col-right{grid-template-rows:none}
+    .col-left,.col-right{grid-template-rows:none;align-content:start}
     #view{max-height:44vh}
     .strip{height:auto}
     .panel{overflow:visible}
@@ -176,6 +191,18 @@
           Scoring happens on the scene graph, not on rendered frames. That is why
           twenty thousand configurations is affordable and why only a handful are
           ever rendered.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>contextual bandit <span class="sub" id="bandit-sub">&mdash; LinUCB, not a trained policy</span></h2>
+      <div class="body">
+        <div id="arms"></div>
+        <div class="btnrow" style="margin-top:9px">
+          <button id="btn-bandit" class="primary">Pause</button>
+          <button id="btn-bandit-reset">Reset arms</button>
+          <span class="note" id="bandit-ctx"></span>
         </div>
       </div>
     </div>
@@ -250,6 +277,7 @@ function handle(m){
     case "campaign_start": setBusy(true, m.samples); break;
     case "campaign_done": setBusy(false); onCampaign(m); break;
     case "frame": onFrame(m); break;
+    case "bandit": onBandit(m); break;
     case "toast": toast(m.text); break;
   }
 }
@@ -283,6 +311,7 @@ function renderState(s){
   sel.value = s.strategy;
 
   if(s.scene) $("payload").textContent = JSON.stringify(s.scene, null, 2);
+  if(s.bandit) drawArms(s.bandit);
   if(s.report) drawReport(s.report);
   drawSpark(s.history || []);
   $("m-runs").textContent = (s.history || []).length;
@@ -348,6 +377,44 @@ function onFrame(m){
   $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
 }
 
+function onBandit(m){ drawArms(m.bandit); }
+
+function drawArms(b){
+  $("bandit-sub").textContent =
+    "\u2014 LinUCB, alpha " + b.alpha + ", not a trained policy"
+    + (b.warming_up ? " \u00b7 warming up" : "");
+  $("bandit-ctx").textContent =
+    b.features.map((f,i) => f + " " + b.context[i].toFixed(2)).join("  ") +
+    "   \u00b7  " + b.t + " pulls";
+
+  const box = $("arms");
+  const ranked = b.arms.slice().sort((x,y) => y.ucb - x.ucb);
+  // Bars are scaled across the current spread rather than from zero: the arms
+  // often sit within a few hundredths of each other and a zero-based bar would
+  // draw four identical blocks. The value is printed next to each one.
+  const vals = ranked.map(a => a.ucb);
+  const hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
+  const span = Math.max(hi - lo, 1e-6);
+  const pos = (v) => 12 + 88 * (v - lo) / span;
+
+  box.innerHTML = "";
+  ranked.forEach((a, i) => {
+    const d = document.createElement("div");
+    d.className = "arm" + (i === 0 ? " sel" : "");
+    const total = pos(a.ucb);
+    const bw = Math.max(1.5, Math.min(total - 1, total * (a.bonus / Math.max(a.ucb, 1e-6))));
+    const mw = Math.max(0, total - bw);
+    d.innerHTML =
+      '<div class="top"><span class="nm">' + a.name + "</span>" +
+      '<span class="num">' + a.ucb.toFixed(3) + "  n=" + a.pulls + "</span></div>" +
+      '<div class="blurb">' + a.blurb + " \u00b7 value " + a.mean.toFixed(3) +
+      " \u00b1 " + a.bonus.toFixed(3) + " \u00b7 fails " + (100*a.fail_rate).toFixed(0) + "%</div>" +
+      '<div class="track"><div class="fill" style="width:' + mw + '%"></div>' +
+      '<div class="fill bonus" style="width:' + bw + '%"></div></div>';
+    box.appendChild(d);
+  });
+}
+
 // canvas sparkline, no chart library
 function drawSpark(vals){
   const c = $("spark"), ctx = c.getContext("2d");
@@ -384,6 +451,15 @@ $("btn-run").onclick = () => {
         seed: parseInt($("in-seed").value, 10),
         strategy: $("in-strategy").value});
 };
+let banditOn = true;
+$("btn-bandit").onclick = () => {
+  banditOn = !banditOn;
+  send({type: banditOn ? "bandit_resume" : "bandit_pause"});
+  $("btn-bandit").textContent = banditOn ? "Pause" : "Resume";
+  $("btn-bandit").className = banditOn ? "primary" : "";
+};
+$("btn-bandit-reset").onclick = () => send({type:"bandit_reset"});
+
 window.addEventListener("resize", () => { if(state) drawSpark(state.history || []); });
 
 connect();

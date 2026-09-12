@@ -35,6 +35,7 @@ from engine import (
     default_proposal,
     reliable,
 )
+from bandit import OnlineBandit
 from privacy import PrivacyLedger, startup_assertion
 from providers.base import RenderRequest, WorldModelProvider
 from recorder import Recorder, list_runs, replay_events
@@ -48,6 +49,10 @@ STATIC_DIR = ROOT / "static"
 DEFAULT_M = int(os.getenv("SKOPOS_SAMPLES", "20000"))
 DEFAULT_SEED = int(os.getenv("SKOPOS_SEED", "20260912"))
 ELITE_K = 12
+# Bandit pacing. A tick is microseconds, so the interval is purely about
+# making the bars legible to a human watching them move.
+BANDIT_TICKS_PER_FRAME = 3
+BANDIT_INTERVAL_MS = 110
 
 
 def build_provider(name: Optional[str] = None) -> WorldModelProvider:
@@ -129,6 +134,20 @@ class Demo:
     ledger: PrivacyLedger = field(default_factory=PrivacyLedger)
     provider: WorldModelProvider = field(default_factory=build_provider)
     history: List[float] = field(default_factory=list)   # readiness over time
+    bandit: Optional[OnlineBandit] = None
+
+    def ensure_bandit(self) -> OnlineBandit:
+        if self.bandit is None:
+            self.bandit = OnlineBandit(self.scene, default_proposal(), seed=self.seed)
+        return self.bandit
+
+    def set_scene(self, scene: SceneGraph) -> None:
+        """Adopt a new base room. The bandit model is kept deliberately: arm
+        value is a function of the room context, and the context is exactly what
+        changed, so the estimates transfer and the bars re-order."""
+        self.scene = scene
+        if self.bandit is not None:
+            self.bandit.set_scene(scene)
 
     def run_campaign(self, strategy: Optional[str] = None) -> Dict[str, Any]:
         """Blocking. Call from a worker thread."""
@@ -162,6 +181,7 @@ class Demo:
             "provider": self.provider.health(),
             "assertion": startup_assertion(),
             "ess_min": engine.ESS_MIN,
+            "bandit": self.ensure_bandit().snapshot(),
         }
 
 
@@ -231,6 +251,8 @@ class Loop:
         self.d = demo
         self.closed = False
         self.busy = False
+        self.bandit_on = True
+        self.bandit_task: Optional[asyncio.Task] = None
 
     async def send(self, msg: Dict[str, Any]) -> None:
         if self.closed:
@@ -243,6 +265,37 @@ class Loop:
     async def hello(self) -> None:
         await self.send({"type": "hello", "assertion": startup_assertion()})
         await self.send_state()
+        self.bandit_task = asyncio.create_task(self.bandit_loop())
+
+    async def bandit_loop(self) -> None:
+        """Stream bandit value estimates continuously.
+
+        Runs on the event loop rather than a worker thread: a tick is a handful
+        of 5x5 matrix operations plus one surrogate call, microseconds, so it
+        never blocks anything. The sleep is there for human eyes only.
+        """
+        ob = self.d.ensure_bandit()
+        try:
+            while not self.closed:
+                if self.bandit_on and not self.busy:
+                    last = None
+                    for _ in range(BANDIT_TICKS_PER_FRAME):
+                        last = ob.step()
+                    snap = ob.snapshot()
+                    await self.send({
+                        "type": "bandit",
+                        "bandit": snap,
+                        "last": {
+                            "arm": last.arm,
+                            "reward": round(last.reward, 4),
+                            "failed": last.failed,
+                            "severity": round(last.severity, 3),
+                            "culprit": last.culprit,
+                        },
+                    })
+                await asyncio.sleep(BANDIT_INTERVAL_MS / 1000.0)
+        except asyncio.CancelledError:
+            pass
 
     async def run_campaign(self, strategy: Optional[str] = None) -> None:
         if self.busy:
@@ -291,6 +344,14 @@ class Loop:
             await self.run_campaign(strategy)
         elif t == "get_state":
             await self.send_state()
+        elif t == "bandit_pause":
+            self.bandit_on = False
+        elif t == "bandit_resume":
+            self.bandit_on = True
+        elif t == "bandit_reset":
+            self.d.bandit = None
+            self.d.ensure_bandit()
+            await self.send({"type": "toast", "text": "bandit reset — all four arms back to zero"})
 
 
 @app.websocket("/ws")
@@ -310,3 +371,5 @@ async def ws_endpoint(ws: WebSocket) -> None:
         pass
     finally:
         loop.closed = True
+        if loop.bandit_task is not None:
+            loop.bandit_task.cancel()
