@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skopos — pre-deployment readiness for home robots</title>
+<style>
+  :root{
+    --bg:#0b0d11; --panel:#12161d; --panel2:#161b24; --line:#222a35;
+    --fg:#e6ebf2; --dim:#8b95a5; --dimmer:#5f6a7a;
+    --accent:#4aa8e0; --good:#3ddc97; --warn:#f2b544; --bad:#e0574a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;}
+  a{color:var(--accent)}
+  .wrap{display:flex;flex-direction:column;height:100vh;min-height:0}
+
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+         border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto;flex-wrap:wrap}
+  .logo{font-weight:700;letter-spacing:.14em;font-size:15px}
+  .tag{color:var(--dim);font-size:12px}
+  .spacer{flex:1}
+  .badge{font:11px/1 var(--mono);padding:5px 8px;border:1px solid var(--line);
+         border-radius:4px;color:var(--dim);background:var(--panel2);white-space:nowrap}
+  .badge b{color:var(--fg);font-weight:600}
+  .badge.live{border-color:var(--good);color:var(--good)}
+  .badge.rec{border-color:var(--bad);color:var(--bad)}
+
+  .privacy-bar{padding:6px 16px;background:#0e1a16;border-bottom:1px solid #17301f;
+               color:#7fd8ae;font:11px/1.4 var(--mono);flex:0 0 auto}
+
+  main{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 330px;
+       gap:12px;padding:12px;min-height:0}
+  .col{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+         display:flex;flex-direction:column;min-height:0}
+  .panel > h2{margin:0;padding:8px 12px;font:600 11px/1 var(--mono);
+              letter-spacing:.10em;text-transform:uppercase;color:var(--dim);
+              border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .panel > h2 .sub{font-weight:400;letter-spacing:0;text-transform:none;color:var(--dimmer)}
+  .panel .body{padding:12px;overflow:auto;min-height:0}
+
+  /* main view */
+  #stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+         background:#07090c;border-radius:0 0 8px 8px;padding:10px;min-height:0}
+  #view{max-width:100%;max-height:100%;border-radius:6px;display:block;
+        image-rendering:auto;background:#07090c}
+  .stagebar{display:flex;gap:10px;padding:8px 12px;border-top:1px solid var(--line);
+            font:11px/1 var(--mono);color:var(--dim);flex-wrap:wrap;align-items:center}
+
+  /* controls */
+  .ctl{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .ctl label{font:11px/1.2 var(--mono);color:var(--fg)}
+  .ctl .val{font:11px/1 var(--mono);color:var(--accent);min-width:34px;text-align:right}
+  .ctl .hint{font-size:10.5px;color:var(--dimmer);line-height:1.35}
+  input[type=range]{width:100%;accent-color:var(--accent);height:16px;margin:0}
+
+  button{font:11px/1 var(--mono);padding:7px 10px;border-radius:5px;cursor:pointer;
+         background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{border-color:var(--accent);color:var(--accent)}
+  button.danger{border-color:var(--bad);color:var(--bad)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap}
+
+  /* bandit bars */
+  .arm{margin-bottom:11px}
+  .arm .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+            font:11px/1.3 var(--mono)}
+  .arm .nm{color:var(--fg)}
+  .arm.sel .nm{color:var(--accent);font-weight:700}
+  .arm .num{color:var(--dim)}
+  .arm .blurb{font-size:10px;color:var(--dimmer);margin:1px 0 3px}
+  .track{height:13px;background:#0b0f15;border:1px solid var(--line);border-radius:3px;
+         overflow:hidden;display:flex}
+  .fill{background:var(--accent);transition:width .28s ease}
+  .fill.bonus{background:rgba(74,168,224,.28);transition:width .28s ease}
+  .arm.sel .fill{background:var(--good)}
+  .arm.sel .fill.bonus{background:rgba(61,220,151,.28)}
+
+  /* bottom strip */
+  .strip{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) 240px;
+         gap:12px;padding:0 12px 12px;flex:0 0 auto}
+  #spark{width:100%;height:76px;display:block}
+  .bignum{font:700 44px/1 var(--mono);letter-spacing:-.02em}
+  .state{font:800 30px/1 var(--mono);letter-spacing:.05em;padding:10px 12px;border-radius:6px;
+         text-align:center;border:2px solid}
+  .state.READY{color:var(--good);border-color:var(--good);background:rgba(61,220,151,.08)}
+  .state.MARGINAL{color:var(--warn);border-color:var(--warn);background:rgba(242,181,68,.08)}
+  .state\.NOTREADY,.state.NOT{color:var(--bad);border-color:var(--bad);background:rgba(224,87,74,.08)}
+
+  table{width:100%;border-collapse:collapse;font:11px/1.4 var(--mono)}
+  td,th{padding:2px 4px;text-align:left;border-bottom:1px solid #1a2029}
+  th{color:var(--dimmer);font-weight:400}
+  td.r,th.r{text-align:right}
+
+  pre{margin:0;font:10.5px/1.45 var(--mono);color:#a8d8bf;white-space:pre-wrap;
+      word-break:break-word}
+  .kv{display:flex;justify-content:space-between;font:11px/1.7 var(--mono);gap:8px}
+  .kv span:first-child{color:var(--dim)}
+  .flash{animation:fl .5s ease}
+  @keyframes fl{from{background:rgba(74,168,224,.22)}to{background:transparent}}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+         background:var(--panel2);border:1px solid var(--accent);color:var(--accent);
+         padding:8px 14px;border-radius:6px;font:11px/1 var(--mono);opacity:0;
+         transition:opacity .25s;pointer-events:none;z-index:50}
+  #toast.on{opacity:1}
+  .scroll{overflow:auto}
+  @media (max-width:1100px){
+    main{grid-template-columns:minmax(0,1fr)}
+    .strip{grid-template-columns:minmax(0,1fr)}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">SKOPOS</div>
+  <div class="tag">a home robot should meet your home before it ships to your home</div>
+  <div class="spacer"></div>
+  <div class="badge" id="b-seed">seed <b>—</b></div>
+  <div class="badge" id="b-prov">provider <b>—</b></div>
+  <div class="badge" id="b-attempt">attempt <b>0</b></div>
+  <div class="badge" id="b-conn">connecting…</div>
+</header>
+
+<div class="privacy-bar" id="privacy-line">PRIVACY: frames are processed in memory and discarded; only the SceneGraph (structured text, no pixels) leaves this device.</div>
+
+<main>
+  <div class="col">
+    <div class="panel" style="flex:1 1 auto">
+      <h2>rendered room <span class="sub" id="room-sub"></span></h2>
+      <div id="stage"><img id="view" alt="rendered room"></div>
+      <div class="stagebar">
+        <span id="s-arm">arm —</span>
+        <span id="s-fid">fidelity —</span>
+        <span id="s-lat">latency —</span>
+        <span id="s-sev">severity —</span>
+        <span id="s-w">weight —</span>
+        <span class="spacer" style="flex:1"></span>
+        <span id="s-perts"></span>
+      </div>
+    </div>
+
+    <div class="panel" style="flex:0 0 auto;max-height:230px">
+      <h2>what leaves your device <span class="sub">— the exact payload, live</span></h2>
+      <div class="body" style="display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;max-height:190px">
+        <div>
+          <div class="kv"><span>frames seen</span><b id="p-seen">0</b></div>
+          <div class="kv"><span>frames discarded</span><b id="p-disc" style="color:var(--good)">0</b></div>
+          <div class="kv"><span>frames retained</span><b id="p-ret" style="color:var(--good)">0</b></div>
+          <div class="kv"><span>pixels sent</span><b style="color:var(--good)">0</b></div>
+          <div class="kv"><span>payloads out</span><b id="p-count">0</b></div>
+          <div class="kv"><span>bytes out</span><b id="p-bytes">0</b></div>
+          <div class="hint" style="font-size:10px;color:var(--dimmer);margin-top:6px">
+            Everything to the right is all that crosses a network boundary. Read it.
+          </div>
+        </div>
+        <pre id="payload" class="scroll">—</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel" style="flex:0 0 auto">
+      <h2>contextual bandit <span class="sub" id="bandit-sub">— LinUCB, not a trained policy</span></h2>
+      <div class="body" id="arms"></div>
+    </div>
+
+    <div class="panel" style="flex:1 1 auto;min-height:0">
+      <h2>perturbation prior <span class="sub">— rates, not measurements</span></h2>
+      <div class="body scroll" id="axes"></div>
+    </div>
+
+    <div class="panel" style="flex:0 0 auto">
+      <h2>run control</h2>
+      <div class="body">
+        <div class="btnrow" style="margin-bottom:8px">
+          <button id="btn-pause" class="primary">Pause</button>
+          <button id="btn-shift">Shift room</button>
+          <button id="btn-reset">Reset</button>
+        </div>
+        <div class="btnrow">
+          <button id="btn-rec">● Record run</button>
+          <button id="btn-replay">▶ Replay</button>
+        </div>
+        <div class="ctl" style="margin-top:10px">
+          <div class="row"><label for="sp">frame interval</label><span class="val" id="sp-v">70ms</span></div>
+          <input type="range" id="sp" min="10" max="300" step="10" value="70">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="rs">attempts per room</label><span class="val" id="rs-v">8</span></div>
+          <input type="range" id="rs" min="1" max="30" step="1" value="8">
+          <div class="hint">A new room is drawn from the prior every N attempts.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="strip">
+  <div class="panel">
+    <h2>rolling success <span class="sub" id="win-sub"></span></h2>
+    <div class="body" style="padding:8px 12px 10px">
+      <canvas id="spark" width="600" height="76"></canvas>
+      <div class="kv" style="margin-top:4px">
+        <span>weighted success (importance-corrected)</span><b id="m-ws">—</b>
+      </div>
+      <div class="kv"><span>weighted hazard-contact rate</span><b id="m-wh">—</b></div>
+      <div class="kv"><span>ESS / coverage</span><b id="m-ess">—</b></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>hazard attribution <span class="sub">— which flagged object caused the failure</span></h2>
+    <div class="body scroll" style="padding:8px 12px"><table id="haz"><tbody></tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <h2>readiness</h2>
+    <div class="body" style="text-align:center;padding:10px">
+      <div class="bignum" id="r-score">—</div>
+      <div style="font:10px var(--mono);color:var(--dimmer);margin:2px 0 8px">/ 100</div>
+      <div class="state" id="r-state">—</div>
+      <div style="font:9.5px/1.4 var(--mono);color:var(--dimmer);margin-top:8px" id="r-formula"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let ws = null, state = null, paused = false, recording = false, replaying = false;
+let lastArms = [];
+
+function toast(t){ const el=$("toast"); el.textContent=t; el.classList.add("on");
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("on"), 2200); }
+
+function send(msg){ if(ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }
+
+// ---------------------------------------------------------------- websocket
+function connect(){
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(proto + "://" + location.host + "/ws");
+  ws.onopen = () => { $("b-conn").textContent = "connected"; $("b-conn").className="badge live"; };
+  ws.onclose = () => { $("b-conn").textContent = "disconnected"; $("b-conn").className="badge";
+                       setTimeout(connect, 1200); };
+  ws.onmessage = (e) => handle(JSON.parse(e.data));
+}
+
+function handle(m){
+  switch(m.type){
+    case "hello": $("privacy-line").textContent = m.assertion; break;
+    case "state": state = m; renderState(m); break;
+    case "attempt_start": onAttemptStart(m); break;
+    case "frame": onFrame(m); break;
+    case "attempt_end": onAttemptEnd(m); break;
+    case "recording":
+      recording = m.on;
+      $("btn-rec").textContent = m.on ? "■ Stop recording" : "● Record run";
+      $("btn-rec").className = m.on ? "danger" : "";
+      if(m.saved) toast("saved " + m.saved.run_id + " (" + m.saved.events + " events)");
+      else if(m.on) toast("recording " + m.run_id);
+      break;
+    case "replay":
+      replaying = m.on;
+      $("btn-replay").textContent = m.on ? "■ Stop replay" : "▶ Replay";
+      $("b-conn").textContent = m.on ? "REPLAY (offline)" : "connected";
+      $("b-conn").className = m.on ? "badge rec" : "badge live";
+      break;
+    case "runs": pickRun(m.runs); break;
+    case "toast": toast(m.text); break;
+  }
+}
+
+// ------------------------------------------------------------------ render
+function renderState(s){
+  $("b-seed").innerHTML = "seed <b>" + s.seed + "</b>";
+  const p = s.provider;
+  $("b-prov").innerHTML = "provider <b>" + p.provider + (p.live ? " · live" : " · mock") + "</b>";
+  $("b-prov").className = "badge" + (p.live ? " live" : "");
+  $("b-attempt").innerHTML = "attempt <b>" + s.attempt + "</b>";
+  $("privacy-line").textContent = s.assertion;
+  $("win-sub").textContent = "— last " + s.metrics.window + " attempts";
+  $("bandit-sub").textContent = "— LinUCB, alpha " + s.bandit.alpha + ", not a trained policy";
+  if(!$("axes").dataset.built) buildAxes(s);
+  drawArms(s.bandit);
+  drawMetrics(s.metrics);
+  drawPrivacy(s.privacy);
+  $("rs").value = s.resample_every; $("rs-v").textContent = s.resample_every;
+}
+
+function buildAxes(s){
+  const box = $("axes"); box.innerHTML = "";
+  s.axes.forEach(ax => {
+    const d = document.createElement("div"); d.className = "ctl";
+    d.innerHTML =
+      '<div class="row"><label for="ax-'+ax+'">'+ax+'</label>'+
+      '<span class="val" id="axv-'+ax+'">'+s.prior.rates[ax].toFixed(2)+'</span></div>'+
+      '<input type="range" id="ax-'+ax+'" min="0" max="1" step="0.01" value="'+s.prior.rates[ax]+'">'+
+      '<div class="hint">'+s.axis_desc[ax]+'</div>';
+    box.appendChild(d);
+    d.querySelector("input").addEventListener("input", (e) => {
+      $("axv-"+ax).textContent = (+e.target.value).toFixed(2);
+      const rates = {}; rates[ax] = +e.target.value;
+      send({type:"set_rates", rates});
+    });
+  });
+  const t = document.createElement("div"); t.className = "ctl";
+  t.style.borderTop = "1px solid var(--line)"; t.style.paddingTop = "10px";
+  t.innerHTML =
+    '<div class="row"><label for="tilt">importance tilt</label>'+
+    '<span class="val" id="tilt-v">'+s.prior.tilt.toFixed(2)+'</span></div>'+
+    '<input type="range" id="tilt" min="0" max="0.9" step="0.05" value="'+s.prior.tilt+'">'+
+    '<div class="hint">0 = sample straight from the prior, every weight exactly 1. '+
+    'Higher oversamples rare severe rooms and corrects with w = p/q.</div>';
+  box.appendChild(t);
+  t.querySelector("input").addEventListener("input", (e) => {
+    $("tilt-v").textContent = (+e.target.value).toFixed(2);
+    send({type:"set_tilt", tilt:+e.target.value});
+  });
+  box.dataset.built = "1";
+}
+
+function drawArms(b){
+  const box = $("arms");
+  const order = b.arms.map(a=>a.name);
+  const changed = JSON.stringify(order.slice().sort((x,y)=>
+      b.arms.find(a=>a.name===y).ucb - b.arms.find(a=>a.name===x).ucb)) !== JSON.stringify(lastArms);
+  const ranked = b.arms.slice().sort((x,y)=>y.ucb-x.ucb);
+  lastArms = JSON.stringify(ranked.map(a=>a.name));
+  const max = Math.max(0.001, ...b.arms.map(a=>a.ucb));
+  box.innerHTML = "";
+  ranked.forEach((a,i) => {
+    const d = document.createElement("div");
+    d.className = "arm" + (i===0 ? " sel" : "");
+    const mw = Math.max(0, Math.min(100, 100*a.mean/max));
+    const bw = Math.max(0, Math.min(100-mw, 100*a.bonus/max));
+    d.innerHTML =
+      '<div class="top"><span class="nm">'+a.name+'</span>'+
+      '<span class="num">'+a.ucb.toFixed(3)+'  n='+a.pulls+'</span></div>'+
+      '<div class="blurb">'+a.blurb+' · value '+a.mean.toFixed(3)+
+      ' ± '+a.bonus.toFixed(3)+' · success '+(100*a.success_rate).toFixed(0)+'%</div>'+
+      '<div class="track"><div class="fill" style="width:'+mw+'%"></div>'+
+      '<div class="fill bonus" style="width:'+bw+'%"></div></div>';
+    box.appendChild(d);
+  });
+}
+
+function drawMetrics(m){
+  const r = m.readiness;
+  $("r-score").textContent = r.score.toFixed(1);
+  const st = $("r-state");
+  st.textContent = r.state;
+  st.className = "state " + (r.state === "READY" ? "READY" : r.state === "MARGINAL" ? "MARGINAL" : "NOT");
+  $("r-formula").textContent = r.formula;
+  $("m-ws").textContent = (100*r.terms.weighted_success).toFixed(1) + "%";
+  $("m-wh").textContent = (100*r.terms.weighted_hazard_rate).toFixed(1) + "%";
+  $("m-ess").textContent = r.ess.toFixed(1) + " / n=" + r.n +
+      "  (coverage " + (100*r.terms.coverage_ess).toFixed(0) + "%)";
+  spark(m.sparkline);
+  const tb = $("haz").querySelector("tbody");
+  tb.innerHTML = '<tr><th>object</th><th>flag</th><th class="r">fails</th><th class="r">share</th></tr>';
+  (m.hazard_attribution||[]).slice(0,7).forEach(h => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>"+h.object_id+"</td><td style='color:var(--bad)'>"+h.flag+
+                   "</td><td class='r'>"+h.failures+"</td><td class='r'>"+(100*h.share).toFixed(0)+"%</td>";
+    tb.appendChild(tr);
+  });
+  if(!(m.hazard_attribution||[]).length)
+    tb.innerHTML += "<tr><td colspan=4 style='color:var(--dimmer)'>no hazard-caused failures yet</td></tr>";
+}
+
+function drawPrivacy(p){
+  $("p-seen").textContent = p.frames_seen;
+  $("p-disc").textContent = p.frames_discarded;
+  $("p-ret").textContent = p.frames_retained;
+  $("p-ret").style.color = p.frames_retained ? "var(--bad)" : "var(--good)";
+  $("p-count").textContent = p.payloads_out;
+  $("p-bytes").textContent = (p.bytes_out/1024).toFixed(1) + " KB";
+  if(p.debug_keep_frames){
+    $("privacy-line").style.background = "#2a1212";
+    $("privacy-line").style.color = "#ff9b90";
+  }
+}
+
+function spark(vals){
+  const c = $("spark"), ctx = c.getContext("2d");
+  const w = c.width = c.clientWidth * (window.devicePixelRatio||1);
+  const h = c.height = 76 * (window.devicePixelRatio||1);
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle = "#222a35"; ctx.lineWidth = 1;
+  [0,0.5,1].forEach(f => { const y = h - f*(h-8) - 4;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); });
+  if(!vals || vals.length < 2) return;
+  const n = vals.length;
+  ctx.lineWidth = 2*(window.devicePixelRatio||1);
+  ctx.strokeStyle = "#4aa8e0";
+  ctx.beginPath();
+  vals.forEach((v,i) => {
+    const x = i/(n-1)*w, y = h - v*(h-8) - 4;
+    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+  });
+  ctx.stroke();
+  const last = vals[n-1];
+  ctx.fillStyle = last > .7 ? "#3ddc97" : last > .4 ? "#f2b544" : "#e0574a";
+  ctx.beginPath(); ctx.arc(w-3, h-last*(h-8)-4, 4*(window.devicePixelRatio||1), 0, 7); ctx.fill();
+  ctx.font = (11*(window.devicePixelRatio||1))+"px ui-monospace,monospace";
+  ctx.fillText((100*last).toFixed(0)+"%", w-46*(window.devicePixelRatio||1),
+               h-last*(h-8)-12*(window.devicePixelRatio||1));
+}
+
+// ------------------------------------------------------------------ events
+function onAttemptStart(m){
+  $("b-attempt").innerHTML = "attempt <b>" + m.attempt + "</b>";
+  $("s-arm").textContent = "arm " + m.arm + " (p=" + m.p_success.toFixed(2) + ")";
+  $("s-sev").textContent = "severity " + m.room.severity.toFixed(2);
+  $("s-w").textContent = "weight " + m.room.weight.toFixed(3) + (m.room.clipped ? " (clipped)" : "");
+  const act = (m.room.perturbations||[]).filter(p=>p.active);
+  $("s-perts").textContent = act.length
+      ? act.map(p => p.axis + " " + p.magnitude.toFixed(2)).join("  ·  ")
+      : "unperturbed room";
+  $("room-sub").textContent = "— " + (act.length ? act.length + " active axes" : "base room");
+  const pay = $("payload");
+  pay.textContent = m.scene_payload;
+  pay.classList.remove("flash"); void pay.offsetWidth; pay.classList.add("flash");
+}
+
+function onFrame(m){
+  $("view").src = m.frame.data_url;
+  $("s-fid").textContent = "fidelity " + (m.frame.meta.fidelity!==undefined
+      ? m.frame.meta.fidelity.toFixed(2) : "—");
+  $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
+}
+
+function onAttemptEnd(m){
+  drawArms(m.bandit);
+  drawMetrics(m.metrics);
+  drawPrivacy(m.privacy);
+}
+
+// ---------------------------------------------------------------- controls
+$("btn-pause").onclick = () => {
+  paused = !paused;
+  send({type: paused ? "pause" : "resume"});
+  $("btn-pause").textContent = paused ? "Resume" : "Pause";
+  $("btn-pause").className = paused ? "" : "primary";
+};
+$("btn-shift").onclick = () => send({type:"shift_room"});
+$("btn-reset").onclick = () => {
+  const s = prompt("Reset with seed:", state ? state.seed : 20260912);
+  if(s !== null) send({type:"reset", seed: parseInt(s,10)});
+};
+$("btn-rec").onclick = () => send({type: recording ? "record_stop" : "record_start"});
+$("btn-replay").onclick = () => {
+  if(replaying){ send({type:"replay_stop"}); return; }
+  send({type:"list_runs"});
+};
+function pickRun(runs){
+  if(!runs.length){ toast("no recorded runs yet — hit Record run first"); return; }
+  const lines = runs.slice(0,10).map((r,i)=> i+": "+r.run_id+"  ("+r.events+" events, seed "+r.seed+")");
+  const pick = prompt("Replay which run?\n\n" + lines.join("\n"), "0");
+  if(pick === null) return;
+  const r = runs[parseInt(pick,10)];
+  if(r) send({type:"replay", run_id:r.run_id});
+}
+$("sp").addEventListener("input", e => {
+  $("sp-v").textContent = e.target.value + "ms";
+  send({type:"set_speed", ms:+e.target.value});
+});
+$("rs").addEventListener("input", e => {
+  $("rs-v").textContent = e.target.value;
+  send({type:"set_resample", every:+e.target.value});
+});
+window.addEventListener("resize", () => { if(state) spark(state.metrics.sparkline); });
+
+connect();
+</script>
+</body>
+</html>
