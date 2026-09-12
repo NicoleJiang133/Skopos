@@ -13,7 +13,15 @@ export function Finish() {
   const objects = scan?.objects ?? []
 
   return (
-    <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
       {doneInventory ? (
         <DoneCard
           inventory={doneInventory}
@@ -74,11 +82,9 @@ function DoneCard({
 }
 
 const card = {
-  position: 'absolute' as const,
-  left: '50%',
-  top: '50%',
-  transform: 'translate(-50%, -50%)',
   width: 'min(520px, calc(100% - 40px))',
+  maxHeight: 'calc(100% - 40px)',
+  overflowY: 'auto' as const,
   padding: 20,
   zIndex: 4,
   animation: 'sk-rise 420ms var(--sk-ease) both',

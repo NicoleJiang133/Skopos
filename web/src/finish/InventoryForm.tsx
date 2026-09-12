@@ -248,12 +248,8 @@ function blurInput(
 }
 
 const card = {
-  position: 'absolute' as const,
-  left: '50%',
-  top: '50%',
-  transform: 'translate(-50%, -50%)',
   width: 'min(520px, calc(100% - 40px))',
-  maxHeight: 'calc(100% - 80px)',
+  maxHeight: 'calc(100% - 40px)',
   overflowY: 'auto' as const,
   padding: 20,
   zIndex: 4,
