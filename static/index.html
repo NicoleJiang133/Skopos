@@ -163,7 +163,7 @@
 <main>
   <div class="col-left">
     <div class="panel">
-      <h2>room render <span class="sub" id="render-sub">&mdash; mock provider</span></h2>
+      <h2>room render <span class="sub" id="render-sub">&mdash; the worst 12 of the campaign, the only ones worth a world-model call</span></h2>
       <div id="stage"><div class="empty">run a campaign to render the room</div></div>
       <div class="stagebar">
         <span id="s-strategy">strategy &mdash;</span>
@@ -171,6 +171,9 @@
         <span id="s-culprit"></span>
         <span id="s-fid">fidelity &mdash;</span>
         <span id="s-lat">render &mdash;</span>
+        <span class="spacer" style="flex:1"></span>
+        <span id="s-elite"></span>
+        <button id="btn-elite" style="padding:3px 7px">Replay worst 12</button>
       </div>
     </div>
 
@@ -362,6 +365,8 @@ function handle(m){
     case "scene_changed": onSceneChanged(m); break;
     case "cem_start": $("cem-note").textContent = "searching\u2026"; break;
     case "cem_done": onCem(m.cem); break;
+    case "elite_start": onEliteStart(m); break;
+    case "elite_done": $("btn-elite").disabled = false; break;
     case "toast": toast(m.text); break;
   }
 }
@@ -560,6 +565,12 @@ function onRescored(m){
         + " samples reused, 0 new generations");
 }
 
+function onEliteStart(m){
+  $("btn-elite").disabled = true;
+  $("s-elite").textContent =
+    "rendering the worst " + m.count + " of " + m.scored.toLocaleString() + " scored";
+}
+
 function onFrame(m){
   const stage = $("stage");
   let img = $("view");
@@ -574,6 +585,8 @@ function onFrame(m){
   $("s-culprit").textContent = (meta.culprit && meta.culprit !== "none") ? ("culprit " + meta.culprit) : "";
   $("s-fid").textContent = "fidelity " + (meta.fidelity !== undefined ? meta.fidelity.toFixed(2) : "—");
   $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
+  if(m.label) $("s-elite").textContent = m.label;
+  if(m.scene) $("payload").textContent = JSON.stringify(m.scene, null, 2);
 }
 
 function drawPrivacy(p){
@@ -765,6 +778,7 @@ $("in-item").addEventListener("change", () => {
 });
 $("btn-clear").onclick = () => send({type:"clear_hazard"});
 $("btn-cem").onclick = () => send({type:"run_cem"});
+$("btn-elite").onclick = () => send({type:"render_elite"});
 $("btn-reset-room").onclick = () => send({type:"reset_scene", rerun:true});
 
 $("in-archetype").addEventListener("change", (e) => {

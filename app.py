@@ -35,9 +35,11 @@ from engine import (
     Campaign,
     Item,
     SceneGraph,
+    apply,
     cem_search,
     default_proposal,
     reliable,
+    surrogate,
 )
 from bandit import OnlineBandit, _point_segment_distance
 from privacy import PrivacyLedger, startup_assertion
@@ -53,6 +55,8 @@ STATIC_DIR = ROOT / "static"
 DEFAULT_M = int(os.getenv("SKOPOS_SAMPLES", "20000"))
 DEFAULT_SEED = int(os.getenv("SKOPOS_SEED", "20260912"))
 ELITE_K = 12
+# Milliseconds each elite frame is held on screen.
+ELITE_FRAME_MS = 550
 # Bandit pacing. A tick is microseconds, so the interval is purely about
 # making the bars legible to a human watching them move.
 BANDIT_TICKS_PER_FRAME = 3
@@ -502,6 +506,8 @@ class Loop:
         self.busy = False
         self.bandit_on = True
         self.bandit_task: Optional[asyncio.Task] = None
+        self.rendering = False
+        self.elite_task: Optional[asyncio.Task] = None
 
     async def send(self, msg: Dict[str, Any]) -> None:
         if self.closed:
@@ -591,6 +597,8 @@ class Loop:
                 "scene_payload": payload,
                 "privacy": d.ledger.to_dict(),
             })
+            # The worst twelve are what a human needs to see, so play them.
+            self.elite_task = asyncio.create_task(self.render_elite())
         finally:
             self.busy = False
 
@@ -647,6 +655,48 @@ class Loop:
         row["sample_ms"] = round(self.d.sample_ms, 1)
         await self.send({"type": "rescored", "row": row, "archetype": name})
 
+    async def render_elite(self) -> None:
+        """Render ONLY the worst k configurations.
+
+        This is the reason the surrogate exists. A campaign scores tens of
+        thousands of configurations on the scene graph; every rendered frame
+        costs a world-model call, so we spend that budget exclusively on
+        campaign.elite(k) — the worst ones, the ones a human needs to look at.
+        Rendering a whole campaign is never done and never offered.
+        """
+        camp = self.d.campaign
+        if camp is None:
+            await self.send({"type": "toast", "text": "run a campaign first"})
+            return
+        if self.rendering:
+            return
+        self.rendering = True
+        try:
+            thetas = camp.elite(ELITE_K)
+            await self.send({"type": "elite_start", "count": len(thetas),
+                             "scored": len(camp.thetas)})
+            for rank, theta in enumerate(thetas):
+                if self.closed:
+                    return
+                room = apply(self.d.scene, theta)
+                severity, culprit = surrogate(room, self.d.strategy)
+                frame = self.d.provider.render(room, RenderRequest(
+                    seed=self.d.seed, step=rank, severity=severity, rank=rank,
+                    of=len(thetas), strategy=self.d.strategy, culprit=culprit,
+                    status="fail" if severity >= 1.0 else "running",
+                ))
+                await self.send({
+                    "type": "frame", "frame": frame.to_dict(),
+                    "strategy": self.d.strategy,
+                    "label": "elite {}/{}".format(rank + 1, len(thetas)),
+                    "rank": rank, "of": len(thetas),
+                    "scene": scene_to_dict(room),
+                })
+                await asyncio.sleep(ELITE_FRAME_MS / 1000.0)
+            await self.send({"type": "elite_done", "count": len(thetas)})
+        finally:
+            self.rendering = False
+
     async def handle(self, msg: Dict[str, Any]) -> None:
         t = msg.get("type")
         if t == "run_campaign":
@@ -682,6 +732,8 @@ class Loop:
                                           bool(msg.get("rerun", True)))
         elif t == "rescore":
             await self.rescore(msg.get("archetype", ""))
+        elif t == "render_elite":
+            self.elite_task = asyncio.create_task(self.render_elite())
         elif t == "run_cem":
             await self.send({"type": "cem_start"})
             cem = await asyncio.to_thread(self.d.run_cem)
@@ -715,3 +767,5 @@ async def ws_endpoint(ws: WebSocket) -> None:
         loop.closed = True
         if loop.bandit_task is not None:
             loop.bandit_task.cancel()
+        if loop.elite_task is not None:
+            loop.elite_task.cancel()
