@@ -235,7 +235,11 @@ export const useStore = create<State>((set, get) => ({
     } else {
       set({ venuePhoto })
     }
-    get().logInteraction('photo', { bytes: venuePhoto?.size ?? 0 })
+    get().logInteraction('photo', {
+      bytes: venuePhoto?.size ?? 0,
+      name: venuePhoto instanceof File ? venuePhoto.name : 'photo',
+      type: venuePhoto?.type ?? '',
+    })
   },
 
   logInteraction: (kind, detail) => {
