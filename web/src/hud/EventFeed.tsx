@@ -16,7 +16,15 @@ export function EventFeed() {
       title="Event stream"
       style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
     >
-      <div style={{ overflowY: 'auto', display: 'grid', gap: 6, paddingRight: 4 }}>
+      <div
+        style={{
+          overflowY: 'auto',
+          display: 'grid',
+          gap: 6,
+          paddingRight: 4,
+          overflowWrap: 'anywhere',
+        }}
+      >
         {events.map((e) => (
           <div key={e.id} style={{ font: '11px/1.5 var(--sk-font-mono)', color: TONE[e.tone] }}>
             <span style={{ opacity: 0.5 }}>

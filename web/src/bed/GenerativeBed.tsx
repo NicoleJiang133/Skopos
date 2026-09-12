@@ -63,6 +63,7 @@ export function GenerativeBed() {
         state: useStore.getState().bedState,
         hue: programs[useStore.getState().screen].hue,
       }))
+      URL.revokeObjectURL(url)
       setPhotoReady(true)
       useStore.getState().pushEvent('World built from your venue photo')
     }
@@ -71,7 +72,11 @@ export function GenerativeBed() {
     return () => {
       cancelled = true
       stopPhotoBed?.()
-      URL.revokeObjectURL(url)
+      if (!image.complete) {
+        image.onload = null
+        image.src = ''
+        URL.revokeObjectURL(url)
+      }
     }
   }, [venuePhoto])
 
