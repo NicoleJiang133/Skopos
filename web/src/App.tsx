@@ -1,7 +1,6 @@
 import { GenerativeBed } from './bed/GenerativeBed'
 import { Landing } from './screens/Landing'
 import { LiveOps } from './screens/LiveOps'
-import { Play } from './screens/Play'
 import { Setup } from './screens/Setup'
 import { useStore } from './state/store'
 import type { ScreenId } from './prompts/screens'
@@ -10,7 +9,6 @@ const SCREENS: Record<ScreenId, () => React.JSX.Element> = {
   landing: Landing,
   setup: Setup,
   live: LiveOps,
-  play: Play,
 }
 
 export default function App() {
@@ -53,8 +51,7 @@ export default function App() {
                   font: 'inherit',
                   letterSpacing: 'inherit',
                   cursor: 'pointer',
-                  borderBottom:
-                    id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
+                  borderBottom: id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
                   paddingBottom: 2,
                 }}
               >

@@ -1,54 +1,52 @@
 // Same-origin by default: the dev server proxies /play, /api, /static and /ws to the game backend.
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? '/play'
-const SCAN_BASE = import.meta.env.VITE_BACKEND_SCAN_BASE ?? ''
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "/play";
+const SCAN_BASE = import.meta.env.VITE_BACKEND_SCAN_BASE ?? "";
 
 export interface ScanResult {
-  roomId: string
+  roomId: string;
   objects: {
-    id: string
-    label: string
-    material: string
-    confidence: number
-    hazards: string[]
-  }[]
-  source: string
+    id: string;
+    label: string;
+    material: string;
+    confidence: number;
+  }[];
+  source: string;
 }
 
 export async function scanVenue(photo: Blob): Promise<ScanResult> {
-  const body = new FormData()
-  body.append('file', photo, 'venue-photo.jpg')
+  const body = new FormData();
+  body.append("file", photo, "venue-photo.jpg");
   const response = await fetch(`${SCAN_BASE}/api/scan`, {
-    method: 'POST',
+    method: "POST",
     body,
-  })
+  });
   const json = (await response.json().catch(() => ({}))) as {
-    error?: string
+    error?: string;
     scene?: {
-      room_id?: string
+      room_id?: string;
       objects?: {
-        id?: string
-        label?: string
-        material?: string
-        confidence?: number
-        hazards?: string[]
-      }[]
-    }
-    source?: string
-  }
-  if (!response.ok) throw new Error(json.error ?? `scan failed (${response.status})`)
+        id?: string;
+        label?: string;
+        material?: string;
+        confidence?: number;
+      }[];
+    };
+    source?: string;
+  };
+  if (!response.ok)
+    throw new Error(json.error ?? `scan failed (${response.status})`);
   return {
-    roomId: json.scene?.room_id ?? '',
+    roomId: json.scene?.room_id ?? "",
     objects: (json.scene?.objects ?? []).map((object) => ({
-      id: object.id ?? '',
-      label: object.label ?? '',
-      material: object.material ?? '',
+      id: object.id ?? "",
+      label: object.label ?? "",
+      material: object.material ?? "",
       confidence: object.confidence ?? 0,
-      hazards: object.hazards ?? [],
     })),
-    source: json.source ?? '',
-  }
+    source: json.source ?? "",
+  };
 }
 
 export function enterBackend(): void {
-  window.location.assign(BACKEND_URL)
+  window.location.assign(BACKEND_URL);
 }

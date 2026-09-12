@@ -10,5 +10,4 @@ export const programs: Record<ScreenId, PromptProgram> = {
   landing: landingProgram,
   setup: setupProgram,
   live: liveOpsProgram,
-  play: liveOpsProgram,
 }
