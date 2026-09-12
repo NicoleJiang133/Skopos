@@ -1,0 +1,35 @@
+{
+  "palette": {
+    "void": { "hex": "#14110d", "prompt": "deep warm umber shadow" },
+    "deep": { "hex": "#231c14", "prompt": "dusk earth tone" },
+    "panel": { "hex": "#2e2519", "prompt": "aged oak and linen" },
+    "edge": { "hex": "#4a3a26", "prompt": "warm bronze rim light" },
+    "cyan": { "hex": "#f2c66d", "prompt": "golden hour sunlight" },
+    "teal": { "hex": "#8fb96b", "prompt": "soft moss and olive green" },
+    "amber": { "hex": "#ff9a4d", "prompt": "warm lantern amber" },
+    "magenta": { "hex": "#d8735a", "prompt": "terracotta accent" }
+  },
+  "materials": [
+    "weathered oak, stone and terracotta",
+    "linen canopies and woven textiles",
+    "living greenery, grass, trailing vines",
+    "sunlit dust, still water reflections"
+  ],
+  "lighting": [
+    "golden hour sun, long soft shadows",
+    "warm natural bounce light, no artificial glow",
+    "gentle atmospheric haze, painterly bloom"
+  ],
+  "camera": [
+    "slow drifting crane or gentle dolly, never handheld",
+    "wide open-world establishing framing, deep focus",
+    "center of frame kept calm and uncluttered for the code UI layer"
+  ],
+  "era": "open-world adventure game render, a real-world venue set in a warm natural landscape, AAA cinematic, no text, no UI chrome",
+  "motion": {
+    "ease": "cubic-bezier(0.16, 1, 0.3, 1)",
+    "fast_ms": 160,
+    "med_ms": 420,
+    "morph_ms": 1800
+  }
+}

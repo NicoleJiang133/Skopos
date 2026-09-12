@@ -1,0 +1,200 @@
+/* Skopos design tokens — single source of truth for the code layer.
+   Mirrored in design/tokens.meta.json, which feeds the style bible prompt. */
+:root {
+  --sk-void: #14110d;
+  --sk-deep: #231c14;
+  --sk-panel: #2e2519;
+  --sk-edge: #4a3a26;
+  --sk-cyan: #f2c66d;
+  --sk-teal: #8fb96b;
+  --sk-amber: #ff9a4d;
+  --sk-magenta: #d8735a;
+  --sk-text: #f5ecdc;
+  --sk-text-dim: #b3a389;
+
+  --sk-radius-sm: 6px;
+  --sk-radius-md: 12px;
+  --sk-radius-lg: 20px;
+
+  --sk-stroke: 1px;
+  --sk-glow-cyan: 0 0 18px rgba(242, 198, 109, 0.4);
+  --sk-glow-amber: 0 0 18px rgba(255, 154, 77, 0.45);
+
+  --sk-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --sk-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --sk-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --sk-dur-fast: 160ms;
+  --sk-dur-med: 420ms;
+  --sk-dur-morph: 1800ms; /* matches one Visko chunk (33 frames @18fps) */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--sk-void);
+  color: var(--sk-text);
+  font-family: var(--sk-font-display);
+  overflow: hidden;
+}
+
+.sk-panel {
+  background: linear-gradient(180deg, rgba(46, 37, 25, 0.78), rgba(35, 28, 20, 0.7));
+  border: var(--sk-stroke) solid var(--sk-edge);
+  border-radius: var(--sk-radius-md);
+  backdrop-filter: blur(14px);
+}
+
+.sk-glow {
+  box-shadow: var(--sk-glow-cyan);
+}
+
+.sk-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(20, 17, 13, 0.06) 0px,
+    rgba(20, 17, 13, 0.06) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+@keyframes sk-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sk-pulse-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes sk-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes sk-dash {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+/* photo "develops" like a print: blurred, washed out → sharp, warm */
+@keyframes sk-develop {
+  0% {
+    opacity: 0;
+    filter: blur(28px) saturate(0.2) brightness(1.6);
+    transform: scale(1.12);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) saturate(1.05) brightness(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes sk-sweep {
+  from {
+    transform: translateX(-60vw) skewX(-12deg);
+  }
+  to {
+    transform: translateX(160vw) skewX(-12deg);
+  }
+}
+
+@keyframes sk-tag-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes sk-ping {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+@keyframes sk-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.06);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.05);
+  }
+}
+
+/* a transparent disc with a huge shadow: shrinking it closes the eye */
+@keyframes sk-iris-close {
+  from {
+    width: 260vmax;
+    height: 260vmax;
+    margin: -130vmax;
+  }
+  to {
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+}
+
+@keyframes sk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
