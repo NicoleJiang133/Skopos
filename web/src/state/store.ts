@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ScanResult } from '../backend/handoff'
 import { astar, type Cell } from '../planner/astar'
 import type { BedState } from '../prompts/types'
 import {
@@ -7,6 +8,7 @@ import {
   presetVenue,
   type ObjectType,
   type ScreenId,
+  type VenueInventory,
   type VenueGrid,
   type VenueObject,
 } from './schema'
@@ -30,7 +32,7 @@ export interface EventEntry {
 export interface Interaction {
   at: number
   screen: ScreenId
-  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive' | 'enter_backend'
+  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive' | 'enter_backend' | 'inventory'
   detail: Record<string, string | number>
 }
 
@@ -40,6 +42,8 @@ interface State {
   bedNudge: string | null
   live: boolean
   venuePhoto: Blob | null
+  scan: ScanResult | null
+  inventory: VenueInventory | null
   grid: VenueGrid
   robot: Cell
   heading: 0 | 1 | 2 | 3
@@ -57,6 +61,8 @@ interface State {
   nudgeBed: (fragment: string, state?: BedState) => void
   setLive: (live: boolean) => void
   setVenuePhoto: (b: Blob | null) => void
+  setScan: (scan: ScanResult | null) => void
+  setInventory: (inventory: VenueInventory | null) => void
   logInteraction: (kind: Interaction['kind'], detail: Interaction['detail']) => void
   exportInteractions: () => void
   addObject: (type: ObjectType, x: number, y: number) => void
@@ -73,6 +79,22 @@ interface State {
 let seq = 0
 let moveTimer: number | undefined
 const nextId = (p: string) => `${p}-${++seq}`
+
+function loadStored<T>(key: string): T | null {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const value = localStorage.getItem(key)
+    return value ? (JSON.parse(value) as T) : null
+  } catch {
+    return null
+  }
+}
+
+function storeValue(key: string, value: unknown) {
+  if (typeof localStorage === 'undefined') return
+  if (value === null) localStorage.removeItem(key)
+  else localStorage.setItem(key, JSON.stringify(value))
+}
 
 function occupied(grid: VenueGrid, ignoreId?: string) {
   const set = new Set<string>()
@@ -183,6 +205,8 @@ export const useStore = create<State>((set, get) => ({
   bedNudge: null,
   live: true,
   venuePhoto: null,
+  scan: loadStored<ScanResult>('skopos.scan'),
+  inventory: loadStored<VenueInventory>('skopos.inventory'),
   grid: initialGrid,
   robot: initialRobot,
   heading: 0,
@@ -216,6 +240,29 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setLive: (live) => set({ live }),
+
+  setScan: (scan) => {
+    set({ scan })
+    storeValue('skopos.scan', scan)
+  },
+
+  setInventory: (inventory) => {
+    set({ inventory })
+    storeValue('skopos.inventory', inventory)
+    if (!inventory) return
+    get().logInteraction('inventory', {
+      venueType: inventory.venueType,
+      tables: inventory.tables,
+      chairs: inventory.chairs,
+      capacity: inventory.capacity,
+      areaSqm: inventory.areaSqm,
+      zones: inventory.zones,
+      staffOnShift: inventory.staffOnShift,
+      peakHour: inventory.peakHour,
+      notes: inventory.notes,
+    })
+    get().pushEvent('Venue inventory saved', 'action')
+  },
 
   setVenuePhoto: (venuePhoto) => {
     if (venuePhoto) {
@@ -253,6 +300,7 @@ export const useStore = create<State>((set, get) => ({
       exportedAt: new Date().toISOString(),
       venue: get().grid,
       interactions: get().interactions,
+      inventory: get().inventory,
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)

@@ -38,6 +38,15 @@ const scenes: Record<ScreenId, Record<BedState, string>> = {
     done: `First-person view from a small serving robot at knee height arriving beside a table in ${VENUE} and gently coming to rest.`,
     alert: `First-person view from a small serving robot at knee height inside ${VENUE} as the room dims and its lamps switch on.`,
   },
+  finish: {
+    idle: `First-person view from a small serving robot at knee height, standing still inside ${VENUE}: table legs and chair seats at eye level, warm light on the floor, very slow subtle sway.`,
+    enter: `First-person view from a small serving robot at knee height as ${VENUE} opens up ahead, warm light settling over the floor.`,
+    move: `First-person view from a small serving robot at knee height rolling smoothly forward through ${VENUE}, floor gliding underneath, furniture passing on both sides, steady motion.`,
+    drag: `First-person view from a small serving robot at knee height inside ${VENUE}: a nearby table is being shifted, its shadow sliding across the floor.`,
+    replanning: `First-person view from a small serving robot at knee height inside ${VENUE}, pausing and slowly turning to look for a new way between the furniture.`,
+    done: `First-person view from a small serving robot at knee height arriving beside a table in ${VENUE} and gently coming to rest.`,
+    alert: `First-person view from a small serving robot at knee height inside ${VENUE} as the room dims and its lamps switch on.`,
+  },
 }
 
 export const PHOTO_ANCHOR =

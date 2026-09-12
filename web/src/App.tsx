@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react'
 import { GenerativeBed } from './bed/GenerativeBed'
+import { Finish } from './screens/Finish'
 import { Landing } from './screens/Landing'
 import { LiveOps } from './screens/LiveOps'
 import { Setup } from './screens/Setup'
@@ -9,6 +11,7 @@ const SCREENS: Record<ScreenId, () => React.JSX.Element> = {
   landing: Landing,
   setup: Setup,
   live: LiveOps,
+  finish: Finish,
 }
 
 export default function App() {
@@ -16,7 +19,36 @@ export default function App() {
   const goto = useStore((s) => s.goto)
   const live = useStore((s) => s.live)
   const setLive = useStore((s) => s.setLive)
+  const hashInitialized = useRef(false)
   const Screen = SCREENS[screen]
+
+  useEffect(() => {
+    const syncHash = () => {
+      if (window.location.hash === '#finish') {
+        if (useStore.getState().screen !== 'finish') goto('finish')
+      } else if (useStore.getState().screen === 'finish') {
+        goto('landing')
+      }
+    }
+    const initial = window.setTimeout(() => {
+      hashInitialized.current = true
+      syncHash()
+    })
+    window.addEventListener('hashchange', syncHash)
+    return () => {
+      window.clearTimeout(initial)
+      window.removeEventListener('hashchange', syncHash)
+    }
+  }, [goto])
+
+  useEffect(() => {
+    if (screen === 'finish') {
+      hashInitialized.current = true
+      if (window.location.hash !== '#finish') window.location.hash = 'finish'
+    } else if (hashInitialized.current && window.location.hash === '#finish') {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [screen])
 
   return (
     <>
@@ -51,7 +83,8 @@ export default function App() {
                   font: 'inherit',
                   letterSpacing: 'inherit',
                   cursor: 'pointer',
-                  borderBottom: id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
+                  borderBottom:
+                    id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
                   paddingBottom: 2,
                 }}
               >
