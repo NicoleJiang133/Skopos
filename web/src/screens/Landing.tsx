@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../state/store'
 import { CTA } from '../hud/HudChrome'
 
@@ -7,16 +7,17 @@ export function Landing() {
   const venuePhoto = useStore((s) => s.venuePhoto)
   const setVenuePhoto = useStore((s) => s.setVenuePhoto)
   const inputRef = useRef<HTMLInputElement>(null)
-  const photoUrl = useMemo(
-    () => (venuePhoto ? URL.createObjectURL(venuePhoto) : null),
-    [venuePhoto],
-  )
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    return () => {
-      if (photoUrl) URL.revokeObjectURL(photoUrl)
+    if (!venuePhoto) {
+      setPhotoUrl(null)
+      return
     }
-  }, [photoUrl])
+    const url = URL.createObjectURL(venuePhoto)
+    setPhotoUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [venuePhoto])
 
   return (
     <div
@@ -82,7 +83,7 @@ export function Landing() {
                 color: 'var(--sk-text-dim)',
               }}
             >
-              World will be generated from this photo
+              Your venue becomes the world
             </div>
           </div>
         )}

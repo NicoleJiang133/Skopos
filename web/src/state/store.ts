@@ -71,6 +71,13 @@ function occupied(grid: VenueGrid, ignoreId?: string) {
   return set
 }
 
+function uniqueObjectId(type: ObjectType, objects: VenueObject[]) {
+  const used = new Set(objects.map((o) => o.id))
+  let n = 1
+  while (used.has(`${type}-${n}`)) n++
+  return `${type}-${n}`
+}
+
 function planRoute(grid: VenueGrid, from: Cell, to: Cell): Cell[] {
   const blockedSet = occupied(grid)
   return astar(from, to, (c) => blockedSet.has(`${c.x},${c.y}`), grid.width, grid.height)
@@ -160,21 +167,31 @@ export const useStore = create<State>((set, get) => ({
   },
 
   addObject: (type, x, y) => {
+    const s = get()
     const item = INVENTORY.find((i) => i.type === type)!
+    const clampedX = Math.max(0, Math.min(s.grid.width - item.w, x))
+    const clampedY = Math.max(0, Math.min(s.grid.height - item.h, y))
+    const blocked = occupied(s.grid)
+    for (let dx = 0; dx < item.w; dx++)
+      for (let dy = 0; dy < item.h; dy++)
+        if (blocked.has(`${clampedX + dx},${clampedY + dy}`)) {
+          get().pushEvent(`${item.label} — no room there`, 'info')
+          return
+        }
     const o: VenueObject = {
-      id: nextId(type),
+      id: uniqueObjectId(type, s.grid.objects),
       type,
-      x,
-      y,
+      x: clampedX,
+      y: clampedY,
       w: item.w,
       h: item.h,
       movable: item.movable,
       eventPrompt: item.eventPrompt,
       label: item.label,
     }
-    set((s) => ({ grid: { ...s.grid, objects: [...s.grid.objects, o] } }))
-    get().logInteraction('place', { type, x, y })
-    get().pushEvent(`${item.label} placed at ${x},${y}`, 'action')
+    set({ grid: { ...s.grid, objects: [...s.grid.objects, o] } })
+    get().logInteraction('place', { type, x: clampedX, y: clampedY })
+    get().pushEvent(`${item.label} placed at ${clampedX},${clampedY}`, 'action')
     get().nudgeBed(item.eventPrompt)
     get().replan()
   },

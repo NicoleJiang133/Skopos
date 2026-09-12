@@ -23,7 +23,7 @@ prompt-program state machine (`bed: procedural`).
 - `src/design/tokens.css` + `tokens.meta.json` — code-layer tokens, also feed the style bible
 - `src/prompts/styleBible.ts` — shared prompt prefix; `src/prompts/screens/*` — per-screen programs
 - `src/bed/` — GenerativeBed (Visko session, set_prompt/set_image bus, fallback)
-- venue photo → Visko image anchor (uploadFile + setImage); interactions logged and exportable as ground-truth JSON
+- venue photo → Visko image anchor (uploadFile + setImage) with a local canvas fallback; interactions logged and exportable as ground-truth JSON
 - `src/floor/` — grid editor + inventory; `src/hud/` — tasks, event feed
 - `src/planner/astar.ts` — local replanning; `src/state/schema.ts` — grid JSON contract
 - `public/keyframes/` — image anchors; `public/fallback/` — pre-recorded loops

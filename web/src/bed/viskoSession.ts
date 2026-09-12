@@ -1,7 +1,7 @@
 import { ViskoOrbisStableModel } from '@reactor-models/visko-orbis-stable'
 import type { BedState } from '../prompts/types'
 
-export type BedSourceKind = 'live' | 'clip' | 'procedural'
+export type BedSourceKind = 'live' | 'photo' | 'procedural'
 
 export interface ViskoHandle {
   model: ViskoOrbisStableModel

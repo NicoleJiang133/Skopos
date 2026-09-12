@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { programs } from '../prompts/screens'
 import { useStore } from '../state/store'
+import { startPhotoBed } from './photoBed'
 import { startProceduralBed } from './proceduralBed'
 import {
   debouncePrompt,
@@ -25,9 +26,11 @@ export function GenerativeBed() {
   const live = useStore((s) => s.live)
   const venuePhoto = useStore((s) => s.venuePhoto)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const photoCanvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const handleRef = useRef<ViskoHandle | null>(null)
   const [source, setSource] = useState<BedSourceKind>('procedural')
+  const [photoReady, setPhotoReady] = useState(false)
   const [lastPrompt, setLastPrompt] = useState('')
 
   const program = programs[screen]
@@ -40,6 +43,37 @@ export function GenerativeBed() {
       state: useStore.getState().bedState,
     }))
   }, [])
+
+  useEffect(() => {
+    const canvas = photoCanvasRef.current
+    if (!venuePhoto || !canvas) {
+      setPhotoReady(false)
+      return
+    }
+
+    setPhotoReady(false)
+    const url = URL.createObjectURL(venuePhoto)
+    const image = new Image()
+    let stopPhotoBed: (() => void) | undefined
+    let cancelled = false
+
+    image.onload = () => {
+      if (cancelled) return
+      stopPhotoBed = startPhotoBed(canvas, image, () => ({
+        state: useStore.getState().bedState,
+        hue: programs[useStore.getState().screen].hue,
+      }))
+      setPhotoReady(true)
+      useStore.getState().pushEvent('World built from your venue photo')
+    }
+    image.src = url
+
+    return () => {
+      cancelled = true
+      stopPhotoBed?.()
+      URL.revokeObjectURL(url)
+    }
+  }, [venuePhoto])
 
   useEffect(() => {
     if (!live) {
@@ -130,6 +164,8 @@ export function GenerativeBed() {
     useStore.getState().pushEvent('World re-anchored to your venue photo')
   }, [venuePhoto])
 
+  const shown: BedSourceKind = source === 'live' ? 'live' : photoReady ? 'photo' : 'procedural'
+
   return (
     <div className="sk-scanlines" style={{ position: 'fixed', inset: 0, zIndex: 0 }}>
       <canvas
@@ -139,7 +175,18 @@ export function GenerativeBed() {
           inset: 0,
           width: '100%',
           height: '100%',
-          opacity: source === 'live' ? 0 : 1,
+          opacity: shown === 'procedural' ? 1 : 0,
+          transition: 'opacity var(--sk-dur-morph) var(--sk-ease)',
+        }}
+      />
+      <canvas
+        ref={photoCanvasRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          opacity: shown === 'photo' ? 1 : 0,
           transition: 'opacity var(--sk-dur-morph) var(--sk-ease)',
         }}
       />
@@ -154,7 +201,7 @@ export function GenerativeBed() {
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          opacity: source === 'live' ? 1 : 0,
+          opacity: shown === 'live' ? 1 : 0,
           transition: 'opacity var(--sk-dur-morph) var(--sk-ease)',
         }}
       />
@@ -167,7 +214,7 @@ export function GenerativeBed() {
             'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(20,17,13,0.55), rgba(20,17,13,0.2) 70%, rgba(20,17,13,0.45))',
         }}
       />
-      <BedDebug source={source} prompt={lastPrompt} anchor={program.anchor} />
+      <BedDebug source={shown} prompt={lastPrompt} anchor={program.anchor} />
     </div>
   )
 }
