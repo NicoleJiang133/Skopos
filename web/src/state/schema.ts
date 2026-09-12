@@ -1,6 +1,8 @@
 /** Grid JSON schema — the contract shared with the robotics side. */
 export const GRID_SCHEMA_VERSION = 1
 
+export type ScreenId = 'landing' | 'setup' | 'live'
+
 export type ObjectType = 'bar' | 'table' | 'chair' | 'plant' | 'stage' | 'dock'
 
 export interface VenueObject {

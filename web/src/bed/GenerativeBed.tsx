@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { composePhotoPrompt } from '../prompts/photoWorld'
 import { programs } from '../prompts/screens'
 import { useStore } from '../state/store'
 import { startPhotoBed } from './photoBed'
@@ -16,8 +17,6 @@ import {
  */
 const RETRY_MS = 20_000
 const RETRY_MAX = 12
-const PHOTO_ANCHOR =
-  'Stay faithful to the provided photograph of this venue: keep its exact layout, architecture, furniture, materials and colours; only change light, weather, atmosphere and slow camera motion.'
 
 export function GenerativeBed() {
   const screen = useStore((s) => s.screen)
@@ -134,7 +133,9 @@ export function GenerativeBed() {
           const prog = programs[s.screen]
           const photo = s.venuePhoto
           if (photo) await handle.prime(photo)
-          handle.setPrompt(`${prog.composePrompt(s.bedState)}${photo ? ` ${PHOTO_ANCHOR}` : ''}`)
+          handle.setPrompt(
+            photo ? composePhotoPrompt(s.screen, s.bedState) : prog.composePrompt(s.bedState),
+          )
           await handle.start()
         })
         .catch((err: unknown) => {
@@ -157,13 +158,13 @@ export function GenerativeBed() {
       setLastPrompt(prompt)
       handleRef.current?.setPrompt(prompt)
     })
-    const base = program.composePrompt(bedState) + (venuePhoto ? ` ${PHOTO_ANCHOR}` : '')
+    const base = venuePhoto ? composePhotoPrompt(screen, bedState) : program.composePrompt(bedState)
     send(bedNudge ? `${base} ${bedNudge}.` : base, bedState)
   }, [program, bedState, bedNudge, venuePhoto])
 
   useEffect(() => {
     if (!handleRef.current || !venuePhoto) return
-    const base = program.composePrompt(bedState) + ` ${PHOTO_ANCHOR}`
+    const base = composePhotoPrompt(screen, bedState)
     const prompt = bedNudge ? `${base} ${bedNudge}.` : base
     void handleRef.current.anchor(venuePhoto, prompt)
     useStore.getState().pushEvent('World re-anchored to your venue photo')

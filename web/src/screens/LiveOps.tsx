@@ -6,6 +6,7 @@ import { Panel } from '../hud/HudChrome'
 import { useStore } from '../state/store'
 
 export function LiveOps() {
+  const jobs = useStore((s) => s.jobs)
   const activeJob = useStore((s) => s.jobs.find((j) => j.id === s.activeJobId))
   const heading = useStore((s) => s.heading)
   const trail = useStore((s) => s.trail)
@@ -56,7 +57,9 @@ export function LiveOps() {
           whiteSpace: 'nowrap',
         }}
       >
-        You are the robot. Drive to: {activeJob?.label ?? 'your next task'}
+        {jobs.length === 0
+          ? 'Drive to: — (add tables in Setup)'
+          : `You are the robot. Drive to: ${activeJob?.label ?? 'your next task'}`}
       </div>
 
       <div

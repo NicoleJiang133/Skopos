@@ -25,6 +25,7 @@ prompt-program state machine (`bed: procedural`).
 - `src/bed/` — GenerativeBed (Visko session, set_prompt/set_image bus, fallback)
 - venue photo → Visko image anchor (uploadFile + setImage) with a local canvas fallback; interactions logged and exportable as ground-truth JSON
 - Landing (photo required) → Setup → Live (first-person: drive the robot with arrows/WASD; A* is only a suggested route; deviations are logged)
+- With a photo set, the grid starts empty and every Visko prompt is confined to that venue (`prompts/photoWorld.ts`); jobs are derived from the tables you place.
 - `src/floor/` — grid editor + inventory; `src/hud/` — tasks, event feed
 - `src/planner/astar.ts` — local replanning; `src/state/schema.ts` — grid JSON contract
 - `public/keyframes/` — image anchors; `public/fallback/` — pre-recorded loops

@@ -1,8 +1,16 @@
 import { create } from 'zustand'
 import { astar, type Cell } from '../planner/astar'
 import type { BedState } from '../prompts/types'
-import type { ScreenId } from '../prompts/screens'
-import { INVENTORY, presetVenue, type ObjectType, type VenueGrid, type VenueObject } from './schema'
+import {
+  GRID_SCHEMA_VERSION,
+  INVENTORY,
+  presetVenue,
+  type ObjectType,
+  type ScreenId,
+  type VenueGrid,
+  type VenueObject,
+} from './schema'
+export type { ScreenId } from './schema'
 
 export interface Job {
   id: string
@@ -37,7 +45,7 @@ interface State {
   heading: 0 | 1 | 2 | 3
   trail: Cell[]
   jobs: Job[]
-  activeJobId: string
+  activeJobId: string | null
   route: Cell[]
   routeProgress: number
   events: EventEntry[]
@@ -54,6 +62,7 @@ interface State {
   addObject: (type: ObjectType, x: number, y: number) => void
   moveObject: (id: string, x: number, y: number) => void
   removeObject: (id: string) => void
+  rebuildJobs: () => void
   selectJob: (id: string) => void
   arrive: () => void
   driveRobot: (action: 'forward' | 'left' | 'right') => void
@@ -87,6 +96,17 @@ function planRoute(grid: VenueGrid, from: Cell, to: Cell): Cell[] {
   return astar(from, to, (c) => blockedSet.has(`${c.x},${c.y}`), grid.width, grid.height)
 }
 
+function emptyVenue(): VenueGrid {
+  return {
+    version: GRID_SCHEMA_VERSION,
+    name: 'Your venue',
+    width: 20,
+    height: 14,
+    objects: [],
+    zones: [],
+  }
+}
+
 function defaultJobs(grid: VenueGrid): Job[] {
   const table2 = grid.objects.find((o) => o.id === 'table-2')!
   const zoneA = grid.zones.find((z) => z.id === 'zone-a')!
@@ -108,6 +128,51 @@ function defaultJobs(grid: VenueGrid): Job[] {
   ]
 }
 
+function venueJobs(grid: VenueGrid): Job[] {
+  const blocked = occupied(grid)
+  const inGrid = (cell: Cell) =>
+    cell.x >= 0 && cell.y >= 0 && cell.x < grid.width && cell.y < grid.height
+  const free = (cell: Cell) => inGrid(cell) && !blocked.has(`${cell.x},${cell.y}`)
+  const tables = grid.objects
+    .filter((o) => o.type === 'table')
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
+  const jobs: Job[] = tables.map((table) => {
+    const clamp = (cell: Cell): Cell => ({
+      x: Math.max(0, Math.min(grid.width - 1, cell.x)),
+      y: Math.max(0, Math.min(grid.height - 1, cell.y)),
+    })
+    const candidates = [
+      { x: table.x, y: table.y + table.h },
+      { x: table.x + table.w, y: table.y },
+      { x: table.x, y: table.y - 1 },
+    ].map(clamp)
+    const target =
+      candidates.find(free) ??
+      Array.from({ length: grid.height }, (_, y) => y)
+        .flatMap((y) => Array.from({ length: grid.width }, (_, x) => ({ x, y })))
+        .find(free) ??
+      candidates[0]
+    return {
+      id: `serve-${table.id}`,
+      kind: 'serve' as const,
+      label: `Serve → ${table.label}`,
+      target,
+      status: 'queued' as const,
+    }
+  })
+  const dock = grid.objects.find((o) => o.type === 'dock')
+  if (dock) {
+    jobs.push({
+      id: 'return-dock',
+      kind: 'clean',
+      label: 'Return to dock',
+      target: { x: Math.max(0, Math.min(grid.width - 1, dock.x)), y: Math.max(0, dock.y - 1) },
+      status: 'queued',
+    })
+  }
+  return jobs
+}
+
 const initialGrid = presetVenue()
 const initialRobot: Cell = { x: 2, y: 12 }
 const initialJobs = defaultJobs(initialGrid)
@@ -127,7 +192,12 @@ export const useStore = create<State>((set, get) => ({
   route: planRoute(initialGrid, initialRobot, initialJobs[0].target),
   routeProgress: 0,
   events: [
-    { id: nextId('ev'), at: Date.now(), text: 'Venue preset loaded — WORLDS LONDON', tone: 'info' },
+    {
+      id: nextId('ev'),
+      at: Date.now(),
+      text: 'Demo venue loaded — upload your photo to replace it',
+      tone: 'info',
+    },
   ],
   replanning: false,
   interactions: [],
@@ -148,7 +218,23 @@ export const useStore = create<State>((set, get) => ({
   setLive: (live) => set({ live }),
 
   setVenuePhoto: (venuePhoto) => {
-    set({ venuePhoto })
+    if (venuePhoto) {
+      const robot = { x: 1, y: 12 }
+      set({
+        venuePhoto,
+        grid: emptyVenue(),
+        robot,
+        heading: 0,
+        trail: [robot],
+        route: [],
+        routeProgress: 0,
+        jobs: [],
+        activeJobId: null,
+      })
+      get().pushEvent('Your venue is the world — mark its layout in Setup')
+    } else {
+      set({ venuePhoto })
+    }
     get().logInteraction('photo', { bytes: venuePhoto?.size ?? 0 })
   },
 
@@ -185,8 +271,9 @@ export const useStore = create<State>((set, get) => ({
           get().pushEvent(`${item.label} — no room there`, 'info')
           return
         }
+    const id = uniqueObjectId(type, s.grid.objects)
     const o: VenueObject = {
-      id: uniqueObjectId(type, s.grid.objects),
+      id,
       type,
       x: clampedX,
       y: clampedY,
@@ -194,12 +281,13 @@ export const useStore = create<State>((set, get) => ({
       h: item.h,
       movable: item.movable,
       eventPrompt: item.eventPrompt,
-      label: item.label,
+      label: type === 'table' ? `${item.label} ${Number(id.split('-').pop())}` : item.label,
     }
     set({ grid: { ...s.grid, objects: [...s.grid.objects, o] } })
     get().logInteraction('place', { type, x: clampedX, y: clampedY })
     get().pushEvent(`${item.label} placed at ${clampedX},${clampedY}`, 'action')
     get().nudgeBed(item.eventPrompt)
+    if (s.venuePhoto) get().rebuildJobs()
     get().replan()
   },
 
@@ -223,15 +311,35 @@ export const useStore = create<State>((set, get) => ({
     get().logInteraction('move', { id, x: clampedX, y: clampedY })
     get().pushEvent(`${target.label} moved → route replanned`, 'action')
     get().nudgeBed(target.eventPrompt)
+    if (s.venuePhoto) get().rebuildJobs()
     get().replan()
   },
 
   removeObject: (id) => {
     set((s) => ({ grid: { ...s.grid, objects: s.grid.objects.filter((o) => o.id !== id) } }))
+    if (get().venuePhoto) get().rebuildJobs()
     get().replan()
   },
 
+  rebuildJobs: () => {
+    const s = get()
+    const jobs = venueJobs(s.grid)
+    const activeJobId =
+      s.activeJobId && jobs.some((job) => job.id === s.activeJobId)
+        ? s.activeJobId
+        : (jobs[0]?.id ?? null)
+    set({
+      jobs: jobs.map((job) => ({ ...job, status: job.id === activeJobId ? 'active' : 'queued' })),
+      activeJobId,
+      route: activeJobId
+        ? planRoute(s.grid, s.robot, jobs.find((job) => job.id === activeJobId)!.target)
+        : [],
+      routeProgress: 0,
+    })
+  },
+
   selectJob: (id) => {
+    if (!get().jobs.some((job) => job.id === id)) return
     set((s) => ({
       activeJobId: id,
       jobs: s.jobs.map((j) => ({ ...j, status: j.id === id ? 'active' : 'queued' })),
@@ -242,6 +350,7 @@ export const useStore = create<State>((set, get) => ({
 
   arrive: () => {
     const s = get()
+    if (s.jobs.length === 0 || !s.activeJobId) return
     const job = s.jobs.find((j) => j.id === s.activeJobId)
     if (!job || job.status === 'done') return
     set((st) => ({
@@ -254,7 +363,7 @@ export const useStore = create<State>((set, get) => ({
       if (nextJob) return st.selectJob(nextJob.id)
       set({ jobs: st.jobs.map((j) => ({ ...j, status: 'queued' })) })
       st.pushEvent('Task cycle complete — requeueing', 'info')
-      st.selectJob(st.jobs[0].id)
+      if (st.jobs[0]) st.selectJob(st.jobs[0].id)
     }, 1400)
   },
 
@@ -317,8 +426,15 @@ export const useStore = create<State>((set, get) => ({
 
   replan: () => {
     const s = get()
+    if (s.jobs.length === 0 || !s.activeJobId) {
+      set({ route: [], routeProgress: 0, replanning: false })
+      return
+    }
     const job = s.jobs.find((j) => j.id === s.activeJobId)
-    if (!job) return
+    if (!job) {
+      set({ route: [], routeProgress: 0, replanning: false })
+      return
+    }
     set({ replanning: true, bedState: 'replanning' })
     window.setTimeout(() => {
       const cur = get()

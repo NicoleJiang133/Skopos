@@ -19,6 +19,7 @@ interface Props {
   showLabels?: boolean
   trail?: Cell[]
   heading?: number
+  backgroundUrl?: string
 }
 
 /** Isometric-feeling holographic floor. Shared by the setup editor and the live minimap. */
@@ -29,6 +30,7 @@ export function GridView({
   showLabels = true,
   trail: trailProp,
   heading: headingProp,
+  backgroundUrl,
 }: Props) {
   const grid = useStore((s) => s.grid)
   const route = useStore((s) => s.route)
@@ -107,7 +109,17 @@ export function GridView({
       }}
     >
       <svg width={W} height={H} style={{ position: 'absolute', inset: 0 }}>
-        <g stroke="rgba(242,198,109,0.14)" strokeWidth={1}>
+        {backgroundUrl && (
+          <image
+            href={backgroundUrl}
+            width={W}
+            height={H}
+            preserveAspectRatio="xMidYMid slice"
+            opacity={0.55}
+          />
+        )}
+
+        <g stroke="rgba(242,198,109,0.14)" strokeWidth={1} opacity={backgroundUrl ? 0.35 : 1}>
           {Array.from({ length: grid.width + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * cell} y1={0} x2={i * cell} y2={H} />
           ))}
