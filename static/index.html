@@ -175,8 +175,22 @@
     </div>
 
     <div class="panel">
-      <h2>scene graph <span class="sub">&mdash; the exact payload that would leave the device</span></h2>
-      <div class="body scroll"><pre id="payload">&mdash;</pre></div>
+      <h2>what leaves your device <span class="sub">&mdash; the exact payload, live</span></h2>
+      <div class="body" style="display:grid;grid-template-columns:184px minmax(0,1fr);
+                               gap:12px;min-height:0">
+        <div style="min-width:0">
+          <div class="kv"><span>frames processed</span><b id="p-seen">0</b></div>
+          <div class="kv"><span>frames discarded</span><b id="p-disc" style="color:var(--good)">0</b></div>
+          <div class="kv"><span>frames written to disk</span><b id="p-ret" style="color:var(--good)">0</b></div>
+          <div class="kv"><span>pixels transmitted</span><b style="color:var(--good)">0</b></div>
+          <div class="kv"><span>payloads sent</span><b id="p-count">0</b></div>
+          <div class="kv"><span>bytes sent</span><b id="p-bytes">0</b></div>
+          <div class="note" style="margin-top:7px" id="p-note">
+            Everything to the right is all that crosses a network boundary. Read it.
+          </div>
+        </div>
+        <pre id="payload" class="scroll" style="min-height:0">&mdash;</pre>
+      </div>
     </div>
   </div>
 
@@ -367,6 +381,7 @@ function renderState(s){
   }
   sel.value = s.strategy;
 
+  if(s.privacy) drawPrivacy(s.privacy);
   if(s.scene){
     $("payload").textContent = JSON.stringify(s.scene, null, 2);
     syncItemControls(s.scene);
@@ -418,6 +433,7 @@ function onCampaign(m){
   const pay = $("payload");
   pay.textContent = m.scene_payload;
   pay.classList.remove("flash"); void pay.offsetWidth; pay.classList.add("flash");
+  drawPrivacy(m.privacy);
 }
 
 function setHeadline(score, state, caption){
@@ -540,7 +556,24 @@ function onFrame(m){
   $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
 }
 
-function drawPrivacy(p){ /* filled in by the privacy panel, step 6 */ }
+function drawPrivacy(p){
+  if(!p) return;
+  $("p-seen").textContent = p.frames_seen;
+  $("p-disc").textContent = p.frames_discarded;
+  $("p-ret").textContent = p.frames_retained;
+  // The only way this is non-zero is the debug flag, which defaults off.
+  $("p-ret").style.color = p.frames_retained ? "var(--bad)" : "var(--good)";
+  $("p-count").textContent = p.payloads_out;
+  $("p-bytes").textContent = (p.bytes_out / 1024).toFixed(1) + " KB";
+  if(p.debug_keep_frames){
+    const bar = $("privacy-line");
+    bar.style.background = "#2a1212";
+    bar.style.borderBottomColor = "#5a2020";
+    bar.style.color = "#ff9b90";
+    $("p-note").textContent =
+      "SKOPOS_DEBUG_KEEP_FRAMES is on: raw frames ARE being written to disk.";
+  }
+}
 
 function onBandit(m){ drawArms(m.bandit); }
 

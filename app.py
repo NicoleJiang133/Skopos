@@ -392,10 +392,13 @@ async def _startup() -> None:
     # Privacy assertion, one line, at startup. See privacy.py.
     log.info(startup_assertion())
     log.info("provider=%s samples=%d seed=%d", DEMO.provider.name, DEMO.m, DEMO.seed)
-    # A scan would hand us frames here. We account for them and drop them.
+    # The scan step. Frames are counted and dropped; nothing is written to disk
+    # unless SKOPOS_DEBUG_KEEP_FRAMES=1, which is off by default and shouted
+    # about in startup_assertion() when it is not.
     DEMO.ledger.note_frames(48)
-    log.info("scan: %d frames processed in memory, %d retained",
-             DEMO.ledger.frames_seen, DEMO.ledger.frames_retained)
+    log.info("scan: %d frames processed in memory, %d discarded, %d written to disk",
+             DEMO.ledger.frames_seen, DEMO.ledger.frames_discarded,
+             DEMO.ledger.frames_retained)
 
 
 @app.get("/")
