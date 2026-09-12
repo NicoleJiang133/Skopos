@@ -1,0 +1,35 @@
+{
+  "palette": {
+    "void": { "hex": "#05070f", "prompt": "near-black indigo void" },
+    "deep": { "hex": "#0a1020", "prompt": "deep navy atmosphere" },
+    "panel": { "hex": "#0f1830", "prompt": "smoked glass panel" },
+    "edge": { "hex": "#1d2b4d", "prompt": "cold steel edge lighting" },
+    "cyan": { "hex": "#46e3ff", "prompt": "holographic cyan emission" },
+    "teal": { "hex": "#2ad9b0", "prompt": "mint telemetry glow" },
+    "amber": { "hex": "#ffb547", "prompt": "amber caution light" },
+    "magenta": { "hex": "#ff5ea8", "prompt": "magenta alert accent" }
+  },
+  "materials": [
+    "brushed dark alloy",
+    "smoked glass with cyan edge-light",
+    "volumetric holographic projection with fine scanlines",
+    "matte carbon floor with subtle specular sweep"
+  ],
+  "lighting": [
+    "low-key ambient, single cool key light from above",
+    "emissive holograms are the brightest elements",
+    "soft volumetric haze, gentle bloom"
+  ],
+  "camera": [
+    "slow controlled dolly, never handheld",
+    "shallow depth of field on foreground hardware",
+    "center of frame kept dark and uncluttered for the code UI layer"
+  ],
+  "era": "near-future venue operations deck, clean AAA game cinematic, no text, no UI chrome",
+  "motion": {
+    "ease": "cubic-bezier(0.16, 1, 0.3, 1)",
+    "fast_ms": 160,
+    "med_ms": 420,
+    "morph_ms": 1800
+  }
+}
