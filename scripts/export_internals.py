@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -31,6 +32,11 @@ def main() -> int:
     ap.add_argument("--no-cem", action="store_true")
     ap.add_argument("--out", default="skopos-internals.html")
     args = ap.parse_args()
+
+    # The exporter renders nothing through a provider, so keep it offline
+    # regardless of what .env selects for the live demo.
+    os.environ.setdefault("SKOPOS_PROVIDER", "mock")
+    os.environ["SKOPOS_PROVIDER"] = "mock"
 
     import app
     import internals

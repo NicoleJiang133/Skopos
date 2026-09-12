@@ -65,6 +65,9 @@ async def main() -> int:
     ap.add_argument("--image-field", default=os.getenv("REACTOR_IMAGE_FIELD", "image"))
     ap.add_argument("--reference", action="append", default=[],
                     help="reference image to upload (repeatable). NOTE: uploads pixels.")
+    ap.add_argument("--image-strength", type=float, default=None,
+                    help="0-1. 1.0 locks the first frame to the reference; low values "
+                         "let the prompt drive appearance while the image nudges layout.")
     ap.add_argument("--save-frame", default=None, help="write one received frame here")
     ap.add_argument("--schema-out", default=None, help="write the full schema JSON here")
     args = ap.parse_args()
@@ -185,6 +188,15 @@ async def main() -> int:
             except Exception as exc:
                 print("      {} FAILED: {}: {}".format(args.image_command, type(exc).__name__, exc))
                 print("      -> check the schema above for the right command/field name")
+            if args.image_strength is not None:
+                try:
+                    r = await reactor.send_command(
+                        "set_image_strength", {"image_strength": args.image_strength})
+                    print("      set_image_strength {} -> ok, reply={}".format(
+                        args.image_strength, r))
+                except Exception as exc:
+                    print("      set_image_strength FAILED: {}: {}".format(
+                        type(exc).__name__, exc))
 
     # ---- drive it and watch for frames -------------------------------------
     print("\n[4/4] sending prompt + start, watching {:.0f}s for frames…".format(args.seconds))

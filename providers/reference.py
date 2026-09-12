@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 from typing import Optional, Tuple
 
 from engine import Item, SceneGraph
@@ -53,9 +54,23 @@ C_TARGET = (236, 232, 224)
 C_ROBOT = (90, 170, 220)
 
 
+def _fit(w: int, h: int, pad: int) -> Tuple[float, float, float]:
+    """Letterbox the room into the canvas: one scale for both axes, centred.
+
+    Stretching x and y independently would misrepresent distances, and distance
+    to the robot's path is exactly what the engine scores on.
+    """
+    room_w, room_h = XMAX - XMIN, YMAX - YMIN
+    scale = min((w - 2 * pad) / room_w, (h - 2 * pad) / room_h)
+    ox = (w - room_w * scale) / 2.0
+    oy = (h - room_h * scale) / 2.0
+    return scale, ox, oy
+
+
 def _project(x: float, y: float, w: int, h: int, pad: int) -> Tuple[float, float]:
-    px = pad + (x - XMIN) / (XMAX - XMIN) * (w - 2 * pad)
-    py = (h - pad) - (y - YMIN) / (YMAX - YMIN) * (h - 2 * pad)
+    scale, ox, oy = _fit(w, h, pad)
+    px = ox + (x - XMIN) * scale
+    py = (h - oy) - (y - YMIN) * scale
     return px, py
 
 
@@ -73,9 +88,19 @@ def _shade(rgb: Tuple[int, int, int], f: float) -> Tuple[int, int, int]:
     return tuple(max(0, min(255, int(c * f))) for c in rgb)
 
 
+# Match the model's output resolution. Reactor's set_image documents that the
+# reference is "center-cropped and resized to the model's output resolution", so
+# a square reference sent to a 1280x768 model loses its left and right edges —
+# which for a room plan means losing the room. Override if your model differs.
+DEFAULT_SIZE = (
+    int(os.getenv("SKOPOS_REFERENCE_W", "1280")),
+    int(os.getenv("SKOPOS_REFERENCE_H", "768")),
+)
+
+
 def render_reference(
     scene: SceneGraph,
-    size: Tuple[int, int] = (768, 768),
+    size: Optional[Tuple[int, int]] = None,
     label: bool = False,
 ) -> Optional[bytes]:
     """Draw the scene graph as a PNG layout reference. Returns None without Pillow.
@@ -83,6 +108,7 @@ def render_reference(
     `label` is off by default: object names help a human read the image but are
     text a generative model may try to reproduce in the output.
     """
+    size = size or DEFAULT_SIZE
     try:
         from PIL import Image, ImageDraw
     except ImportError:
@@ -115,7 +141,7 @@ def render_reference(
         d.line([(min(fx0, fx1), py), (max(fx0, fx1), py)], fill=grid, width=1)
         y += 0.5
 
-    scale = (w - 2 * pad) / (XMAX - XMIN)
+    scale, _, _ = _fit(w, h, pad)
 
     # unmodelled clutter: faint ghosts, deterministic from the count alone
     for i in range(min(scene.clutter, 16)):

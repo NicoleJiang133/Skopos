@@ -12,9 +12,18 @@ does not export them, and these tests assert they still agree.
 from __future__ import annotations
 
 import json
+import os
 import random
 import sys
 from typing import Callable, List, Tuple
+
+# Force the mock provider BEFORE importing app: `import app` constructs the
+# provider at module scope, and with SKOPOS_PROVIDER=reactor in .env that would
+# open a live session — a self-test must never touch the network. Overriding the
+# real environment (not setdefault) is deliberate: the tests assert offline
+# behaviour whatever the operator has configured for the demo.
+os.environ["SKOPOS_PROVIDER"] = "mock"
+os.environ["SKOPOS_REFERENCE"] = "none"
 
 import engine
 from engine import (

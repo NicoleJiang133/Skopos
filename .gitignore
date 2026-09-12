@@ -11,3 +11,6 @@ debug_frames/
 .uvicorn.err
 skopos-internals.html
 *.export.html
+probe_frame*.png
+live_elite.png
+schema.json

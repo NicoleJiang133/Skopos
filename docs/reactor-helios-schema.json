@@ -1,0 +1,1023 @@
+{
+  "components": {
+    "schemas": {
+      "ChunkComplete": {
+        "properties": {
+          "active_prompt": {
+            "description": "The prompt used to generate this chunk.",
+            "type": "string"
+          },
+          "chunk_index": {
+            "description": "Zero-based index of the chunk that just completed.",
+            "type": "integer"
+          },
+          "frames_emitted": {
+            "description": "Running total of frames emitted on `main_video` up to and including this chunk.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_index",
+          "frames_emitted",
+          "active_prompt"
+        ],
+        "type": "object"
+      },
+      "CommandError": {
+        "properties": {
+          "command": {
+            "description": "Name of the command that was rejected.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Human-readable explanation of why the command was rejected.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "ConditionsReady": {
+        "properties": {
+          "has_image": {
+            "description": "True once a reference image has been set for the session.",
+            "type": "boolean"
+          },
+          "has_prompt": {
+            "description": "True once at least one prompt has been set for the session.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_prompt",
+          "has_image"
+        ],
+        "type": "object"
+      },
+      "GenerationPaused": {
+        "properties": {
+          "chunk_index": {
+            "description": "Index of the last completed chunk before pausing.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_index"
+        ],
+        "type": "object"
+      },
+      "GenerationResumed": {
+        "properties": {
+          "chunk_index": {
+            "description": "Index of the next chunk to be generated.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_index"
+        ],
+        "type": "object"
+      },
+      "GenerationStarted": {
+        "properties": {
+          "chunk_index": {
+            "description": "Chunk index at which generation begins. Always `0` for a fresh session or after a `reset`.",
+            "type": "integer"
+          },
+          "prompt": {
+            "description": "The prompt active at the start of generation.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "chunk_index"
+        ],
+        "type": "object"
+      },
+      "ImageAccepted": {
+        "properties": {
+          "height": {
+            "description": "Height in pixels of the reference image after it was center-cropped and resized to the model's output resolution.",
+            "type": "integer"
+          },
+          "width": {
+            "description": "Width in pixels of the reference image after it was center-cropped and resized to the model's output resolution.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "PromptAccepted": {
+        "properties": {
+          "prompt": {
+            "description": "The prompt text that was accepted.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "ReactorUploadReference": {
+        "description": "Reference to a file uploaded via the Reactor upload protocol.",
+        "format": "reactor-upload-reference",
+        "properties": {
+          "mime_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "name",
+          "mime_type",
+          "size"
+        ],
+        "type": "object"
+      },
+      "RewindComplete": {
+        "properties": {
+          "chunk": {
+            "description": "Chunk index the model will continue generating from.",
+            "type": "integer"
+          },
+          "snapshot_index": {
+            "description": "Monotonic ID of the snapshot that was restored.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshot_index",
+          "chunk"
+        ],
+        "type": "object"
+      },
+      "RewindFailed": {
+        "properties": {
+          "reason": {
+            "description": "Human-readable explanation of why the operation failed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SnapshotList": {
+        "properties": {
+          "snapshots": {
+            "description": "Snapshot descriptors, oldest first. Each entry carries ``snapshot_index`` (monotonic ID), ``chunk`` (chunk index at capture), ``label`` (the label passed to `save_snapshot`, or an empty string), ``parent_id`` (ID of the snapshot this one descends from, or ``null`` for a root), and ``prompt`` (the prompt driving generation when the snapshot was saved).",
+            "items": {
+              "properties": {
+                "chunk": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "parent_id": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "snapshot_index": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "snapshot_index",
+                "chunk",
+                "label",
+                "parent_id",
+                "prompt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots"
+        ],
+        "type": "object"
+      },
+      "SnapshotSaved": {
+        "properties": {
+          "chunk": {
+            "description": "Chunk index at which the snapshot was captured.",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the snapshot this one descends from \u2014 the value `current_snapshot_id` held before this call \u2014 or `null` when it is a root. Saving straight after a `rewind` makes the restored snapshot the parent, which is what turns a rewind into a branch."
+          },
+          "snapshot_index": {
+            "description": "Monotonic snapshot ID, numbered from 1 and never reused until `reset` empties the buffer and restarts numbering. Pass it to `rewind` to restore this checkpoint; a rewind to an ID no longer in the buffer fails with `rewind_failed`.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshot_index",
+          "chunk"
+        ],
+        "type": "object"
+      },
+      "State": {
+        "properties": {
+          "current_chunk": {
+            "description": "Zero-based index of the chunk the model is currently working on. `0` for a fresh session or after `reset`.",
+            "type": "integer"
+          },
+          "current_frame": {
+            "description": "Running total of frames emitted on `main_video` since the last `reset` (or session connect). Resets to `0` on `reset`.",
+            "type": "integer"
+          },
+          "current_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The prompt currently driving generation, or `null` if no prompt has been applied yet (e.g. before `start`)."
+          },
+          "current_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the snapshot the current generation descends from, or `null` before the first `save_snapshot`. Set by `save_snapshot` (to the new snapshot) and by `rewind` (to the restored one), and unchanged as chunks advance, so it names the branch being generated rather than a position on it. This is the only way to tell which branch is live: after a `rewind`, `current_chunk` alone is ambiguous because two snapshots can sit at the same chunk on different branches. Matches the `parent_id` the next `save_snapshot` will record."
+          },
+          "image_set": {
+            "description": "True once a reference image has been set for the session.",
+            "type": "boolean"
+          },
+          "image_strength": {
+            "description": "Current value of the `image_strength` input field (0.0\u20131.0). Ignored when no reference image is set.",
+            "type": "number"
+          },
+          "paused": {
+            "description": "True while generation is paused via `pause`.",
+            "type": "boolean"
+          },
+          "running": {
+            "description": "True while the chunk loop is actively producing frames \u2014 equivalent to `started and not paused`. `False` both before `start` and while paused; read `started` to disambiguate.",
+            "type": "boolean"
+          },
+          "scheduled_prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Pending scheduled prompts, keyed by the chunk index (as a decimal string) at which they take effect. Entries are removed once applied.",
+            "type": "object"
+          },
+          "started": {
+            "description": "True once `start` has been accepted. Remains true while paused; reset to false by `reset`. Distinguishes a paused run (`started=True, paused=True`) from a session that has never started (`started=False, paused=False`) \u2014 the `running` flag collapses both of those to `False`.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running",
+          "current_frame",
+          "current_chunk",
+          "current_prompt",
+          "paused",
+          "scheduled_prompts",
+          "image_set",
+          "image_strength",
+          "started"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "",
+    "title": "helios",
+    "version": "v0.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/events/list_snapshots": {
+      "post": {
+        "operationId": "list_snapshots",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotList"
+                }
+              }
+            },
+            "description": "SnapshotList"
+          }
+        },
+        "summary": "Return the snapshots currently in the buffer, oldest first.  Each entry carries ``snapshot_index`` (monotonic ID), ``chunk`` (chunk index at capture), ``label`` (the label passed to ``save_snapshot``), ``parent_id`` (ID of the snapshot this one descends from, or ``null`` for a root), and ``prompt`` (the prompt driving generation at capture).  The parents form a tree: a save after a ``rewind`` branches off the restored snapshot, a save without one extends the current branch, and ``current_snapshot_id`` on the ``state`` message says which branch is live.  Saving evicts the oldest entry, so a ``parent_id`` may name a snapshot no longer listed \u2014 treat an unresolvable parent as a root.  Emits ``snapshot_list`` immediately; always succeeds."
+      }
+    },
+    "/events/pause": {
+      "post": {
+        "operationId": "pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationPaused"
+                }
+              }
+            },
+            "description": "GenerationPaused"
+          }
+        },
+        "summary": "Pause generation after the current chunk finishes. Frames stop streaming on `main_video` until `resume` is called. Requires generation to be active. Emits `generation_paused` on success, or `command_error` if not generating or already paused."
+      }
+    },
+    "/events/reset": {
+      "post": {
+        "operationId": "reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted"
+          }
+        },
+        "summary": "Clear all session conditions (prompt, reference image, chunk index) and return the session to the initial waiting state. After `reset`, a new prompt must be set before `start` can be called again."
+      }
+    },
+    "/events/resume": {
+      "post": {
+        "operationId": "resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResumed"
+                }
+              }
+            },
+            "description": "GenerationResumed"
+          }
+        },
+        "summary": "Resume generation from the exact state at which `pause` was issued. Emits `generation_resumed` on success, or `command_error` if not currently paused."
+      }
+    },
+    "/events/rewind": {
+      "post": {
+        "operationId": "rewind",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "snapshot_index": {
+                    "default": -1.0,
+                    "description": "Which snapshot to restore.  Positive values are snapshot IDs (numbered from 1): pass the ``snapshot_index`` from a previous ``snapshot_saved`` message to target that checkpoint.  Negative values count back from the newest snapshot held: ``-1`` (default) is the most recent, ``-2`` the one before it, and so on.  Either form emits ``rewind_failed`` if the target is not in the buffer.",
+                    "type": "integer",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewindComplete"
+                }
+              }
+            },
+            "description": "RewindComplete"
+          }
+        },
+        "summary": "Restore the model to a previously saved snapshot. The restore is queued: generation resumes from the snapshot's chunk at the next chunk boundary. Only the scene is restored, never the prompt \u2014 send ``set_prompt`` after this call to steer the restored scene somewhere new, or to re-apply the prompt the snapshot was saved under. The restored snapshot becomes ``current_snapshot_id``, so the next ``save_snapshot`` branches off it. Emits a ``state`` update followed by ``rewind_complete`` once queued, or ``rewind_failed`` when the buffer is empty, the index is out of range, or no session is active."
+      }
+    },
+    "/events/save_snapshot": {
+      "post": {
+        "operationId": "save_snapshot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "label": {
+                    "default": "",
+                    "description": "Optional human-readable label stored with the snapshot and returned by ``list_snapshots`` (e.g. ``'before-cat-scene'``). Purely decorative.",
+                    "type": "string",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotSaved"
+                }
+              }
+            },
+            "description": "SnapshotSaved"
+          }
+        },
+        "summary": "Capture the current world state into the snapshot buffer so ``rewind`` can return to it later. The buffer holds up to 50 snapshots and evicts the oldest when full. Emits ``snapshot_saved`` with the snapshot ID, current chunk, and the snapshot it descends from, or ``rewind_failed`` if no chunk has completed yet. The new snapshot descends from whatever ``current_snapshot_id`` named, and becomes the new ``current_snapshot_id`` \u2014 so saving after a ``rewind`` starts a branch off the restored snapshot, while saving without one extends the current branch. An optional ``label`` is stored with the snapshot and returned by ``list_snapshots`` for display."
+      }
+    },
+    "/events/schedule_prompt": {
+      "post": {
+        "operationId": "schedule_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "chunk": {
+                    "default": 0.0,
+                    "description": "Zero-based chunk index at which the prompt takes effect. Chunk indices match those reported by `chunk_complete`.",
+                    "minimum": 0.0,
+                    "type": "integer",
+                    "x-reactor-moderate": false
+                  },
+                  "prompt": {
+                    "default": "",
+                    "description": "Natural-language description of the scene that should become active starting at the given chunk.",
+                    "type": "string",
+                    "x-reactor-moderate": true
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAccepted"
+                }
+              }
+            },
+            "description": "PromptAccepted"
+          }
+        },
+        "summary": "Queue a prompt to take effect at a specific future chunk index. Multiple prompts can be queued; at each chunk boundary the latest scheduled prompt at or before the current chunk wins. Scheduling a prompt for a past chunk applies it on the next chunk. Emits `prompt_accepted`."
+      }
+    },
+    "/events/set_conditioning": {
+      "post": {
+        "operationId": "set_conditioning",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "image": {
+                    "$ref": "#/components/schemas/ReactorUploadReference",
+                    "default": null,
+                    "description": "Reference image uploaded via the Reactor presigned-URL protocol. PNG or JPEG; center-cropped and resized to the model's output resolution.",
+                    "x-reactor-moderate": false
+                  },
+                  "prompt": {
+                    "default": "",
+                    "description": "Natural-language description of the scene to generate. Replaces any previously active prompt and takes effect on the next chunk.",
+                    "type": "string",
+                    "x-reactor-moderate": true
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConditionsReady"
+                }
+              }
+            },
+            "description": "ConditionsReady"
+          }
+        },
+        "summary": "Atomically commit a prompt and a reference image together, in a single command. Use this in place of separate `set_prompt` and `set_image` calls when both are required before `start` \u2014 the combined command can't be split across the wire, so it removes the race where `start` is processed before the image upload has been resolved. Both `prompt` and `image` are required. Emits `prompt_accepted`, `image_accepted`, and `conditions_ready` on success, or `command_error` if any input is missing or invalid (no state is mutated on error)."
+      }
+    },
+    "/events/set_image": {
+      "post": {
+        "operationId": "set_image",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "image": {
+                    "$ref": "#/components/schemas/ReactorUploadReference",
+                    "default": null,
+                    "description": "Reference image uploaded via the Reactor presigned-URL protocol. PNG or JPEG; the image is center-cropped and resized to the model's output resolution. Preferred over `image_b64`.",
+                    "x-reactor-moderate": false
+                  },
+                  "image_b64": {
+                    "default": "",
+                    "description": "Deprecated. Base64-encoded reference image (PNG or JPEG), optionally prefixed with a `data:` URI. Provided for backward compatibility; use `image` instead. Ignored when `image` is also present.",
+                    "type": "string",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAccepted"
+                }
+              }
+            },
+            "description": "ImageAccepted"
+          }
+        },
+        "summary": "Provide a reference image that anchors generation (image-to-video). Can be set before `start` or replaced during generation; a new image applies from the next chunk onward. Exactly one of `image` (preferred) or `image_b64` must be provided. Emits `image_accepted` and `conditions_ready` on success, or `command_error` if the file is missing or not an image. When both a prompt and an image are needed before `start`, prefer `set_conditioning` \u2014 it commits both atomically and avoids the ordering race between `set_prompt` and `set_image`."
+      }
+    },
+    "/events/set_image_strength": {
+      "post": {
+        "operationId": "set_image_strength",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "image_strength": {
+                    "default": 1.0,
+                    "description": "How strongly the reference image anchors the generated video. `1.0` locks the first frame to the reference; lower values let the scene drift further from it. Ignored when no reference image has been set. May be changed at any time; the new value is read at the start of the next chunk.",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted"
+          }
+        },
+        "summary": "How strongly the reference image anchors the generated video. `1.0` locks the first frame to the reference; lower values let the scene drift further from it. Ignored when no reference image has been set. May be changed at any time; the new value is read at the start of the next chunk."
+      }
+    },
+    "/events/set_prompt": {
+      "post": {
+        "operationId": "set_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "prompt": {
+                    "default": "",
+                    "description": "Natural-language description of the scene to generate. Replaces any previously active prompt and takes effect on the next chunk.",
+                    "type": "string",
+                    "x-reactor-moderate": true
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAccepted"
+                }
+              }
+            },
+            "description": "PromptAccepted"
+          }
+        },
+        "summary": "Set the scene prompt. Valid at any time: call before `start` to arm generation, or hot-swap during generation to steer the next chunk. Emits `prompt_accepted` and `conditions_ready` on success. When you also need to set a reference image before the first `start`, use `set_conditioning` instead to commit both atomically."
+      }
+    },
+    "/events/set_seed": {
+      "post": {
+        "operationId": "set_seed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "seed": {
+                    "default": 0.0,
+                    "description": "Seed for the random generator used to sample the initial noise. Use `-1` to draw a fresh random seed. Read once when generation begins; later changes take effect only after `reset` followed by a new `start`.",
+                    "type": "integer",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted"
+          }
+        },
+        "summary": "Seed for the random generator used to sample the initial noise. Use `-1` to draw a fresh random seed. Read once when generation begins; later changes take effect only after `reset` followed by a new `start`."
+      }
+    },
+    "/events/set_sr_scale": {
+      "post": {
+        "operationId": "set_sr_scale",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "sr_scale": {
+                    "default": "2x",
+                    "description": "Super-resolution factor applied to each emitted frame. `off` disables upscaling, `2x` and `4x` upscale the output. May be changed at any time; the new scale applies to the next emitted chunk.",
+                    "enum": [
+                      "off",
+                      "2x",
+                      "4x"
+                    ],
+                    "type": "string",
+                    "x-reactor-moderate": false
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted"
+          }
+        },
+        "summary": "Super-resolution factor applied to each emitted frame. `off` disables upscaling, `2x` and `4x` upscale the output. May be changed at any time; the new scale applies to the next emitted chunk."
+      }
+    },
+    "/events/start": {
+      "post": {
+        "operationId": "start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted"
+          }
+        },
+        "summary": "Begin generating video on `main_video`. Requires that a prompt has been set via `set_prompt` or `schedule_prompt`. Emits `generation_started` on success, or `command_error` if no prompt is set. Has no effect while already generating."
+      }
+    }
+  },
+  "webhooks": {
+    "chunk_complete": {
+      "post": {
+        "operationId": "chunk_complete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChunkComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted once per completed 33-frame chunk of `main_video`."
+      }
+    },
+    "command_error": {
+      "post": {
+        "operationId": "command_error",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandError"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted when a command is rejected because preconditions are not met."
+      }
+    },
+    "conditions_ready": {
+      "post": {
+        "operationId": "conditions_ready",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConditionsReady"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted after `set_prompt` or `set_image` so the client can tell\nat a glance whether `start` will succeed."
+      }
+    },
+    "generation_paused": {
+      "post": {
+        "operationId": "generation_paused",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationPaused"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted in response to `pause`, once the current chunk finishes."
+      }
+    },
+    "generation_resumed": {
+      "post": {
+        "operationId": "generation_resumed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationResumed"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted in response to `resume` when leaving the paused state."
+      }
+    },
+    "generation_started": {
+      "post": {
+        "operationId": "generation_started",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationStarted"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted once when `start` succeeds and frames begin streaming."
+      }
+    },
+    "image_accepted": {
+      "post": {
+        "operationId": "image_accepted",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageAccepted"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted after `set_image` successfully loads a reference image."
+      }
+    },
+    "prompt_accepted": {
+      "post": {
+        "operationId": "prompt_accepted",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptAccepted"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted after `set_prompt` or `schedule_prompt` is accepted."
+      }
+    },
+    "rewind_complete": {
+      "post": {
+        "operationId": "rewind_complete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewindComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted once `rewind` has queued a restore.\n\nSent when the restore is *accepted*, not when it is applied: generation\ncontinues on the pre-rewind branch until the next chunk boundary. The\n`state` message carrying the new `current_snapshot_id` is emitted before\nthis one, so a client that waits on `rewind_complete` already holds the\nupdated state."
+      }
+    },
+    "rewind_failed": {
+      "post": {
+        "operationId": "rewind_failed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewindFailed"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted when `save_snapshot` or `rewind` cannot be completed."
+      }
+    },
+    "snapshot_list": {
+      "post": {
+        "operationId": "snapshot_list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotList"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted in response to `list_snapshots`.\n\nContains every snapshot in the buffer, oldest first.  The buffer holds up\nto 50 entries and drops the oldest as new snapshots are saved, so entries\nfall out of this list over time; IDs are never reused until `reset` empties\nthe buffer and restarts numbering.  The buffer belongs to the session: it\nstarts empty and is released when the session ends, so snapshots are never\nvisible to a later session.\n\nEvery entry records the snapshot it descends from in ``parent_id``, so the\nentries form a tree: saving after a `rewind` branches off the restored\nsnapshot, and saving without one extends the current branch. Because the\nbuffer evicts the oldest entry, a ``parent_id`` can name a snapshot no\nlonger listed \u2014 treat an unresolvable parent as a branch root rather than\nan error."
+      }
+    },
+    "snapshot_saved": {
+      "post": {
+        "operationId": "snapshot_saved",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotSaved"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Emitted after `save_snapshot` successfully captures the world state."
+      }
+    },
+    "state": {
+      "post": {
+        "operationId": "state",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/State"
+              }
+            }
+          },
+          "required": true
+        },
+        "summary": "Snapshot of the session's observable state.\n\nEmitted after every completed chunk and after any command that mutates\nsession state (`set_prompt`, `schedule_prompt`, `set_image`, `start`,\n`pause`, `resume`, `reset`). Clients can treat this as the single\nsource of truth for driving UI, without having to track every\nindividual command and message themselves.\n\nThe snapshot buffer is deliberately *not* carried here: `state` is\nemitted after every completed chunk, and re-sending the whole buffer\nat that rate would repeat the same prompts every second. Call\n`list_snapshots` for the buffer contents; read `current_snapshot_id`\nhere to know where in it the model currently sits."
+      }
+    }
+  },
+  "x-reactor": {
+    "tracks": [
+      {
+        "direction": "out",
+        "kind": "video",
+        "name": "main_video"
+      }
+    ]
+  }
+}

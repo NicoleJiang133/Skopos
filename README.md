@@ -61,14 +61,16 @@ scan ──▶ SceneGraph ──┬──▶ surrogate ──▶ campaign ──
 3. **The rendered frames are a mock by default.** `providers/mock.py` draws a
    stylised plan view and is what you see unless you supply credentials. It is
    labelled `MOCK RENDER / not a world model` inside the image itself.
-4. **The Reactor adapter has never run against the live API.** It is written
-   against `reactor-sdk` 1.5.1, whose API was read off the installed package
-   rather than guessed, so the shape is right — but with no key we could not
-   execute it. What is unverified is what needs a key: the model slug, the
-   command names your model declares, and the frame rate.
-   `scripts/reactor_probe.py` answers all three in one run. The adapter's
-   `health()` says it has never run live, and the provider badge never reads
-   `live` while mock frames are on screen.
+4. **The Reactor path has now been run live, and here is exactly what was
+   measured** (`reactor/helios`, 12 Sept 2026): connect in ~9 s, **16 fps** at
+   1280×768, all 12 elite renders returning live frames under 0.25 s old.
+   The model's own `request_schema()` output is committed at
+   `docs/reactor-helios-schema.json`. Two things it does *not* do: it is
+   prompt-conditioned, so the render is a plausible room consistent with the
+   scene graph's description rather than a faithful reconstruction of it; and it
+   is subject to capacity — a `429 no available capacity` is a normal response,
+   which is why the provider retries with backoff and falls back to mock frames
+   that are labelled as mock.
 5. **The demo room is hand-written**, not scanned. `DEMO_ROOM` in `engine.py` is
    six objects a human typed in. No vision model ran.
 6. **The readiness thresholds are a judgement call**, not a result:
@@ -158,7 +160,7 @@ there, which no amount of moving furniture fixes.
 
 ## Privacy
 
-### Layout conditioning without sending a photograph
+### Why the reference image is off by default — a measurement, not a preference
 
 A world model conditioned on text alone throws away the geometry the surrogate
 scores on, so it wants a reference image. The obvious way to get one — photograph
@@ -178,12 +180,28 @@ different thing.
 
 | `SKOPOS_REFERENCE` | what is uploaded | privacy claim |
 | --- | --- | --- |
-| `rendered` *(default)* | a plan drawn from the scene graph | **holds** — zero additional information crosses the boundary |
+| `none` *(default)* | nothing | holds |
+| `rendered` | a plan drawn from the scene graph | **holds** — zero additional information crosses the boundary |
 | `photo` | the files in `SKOPOS_REFERENCE_IMAGES` | **broken**, and the app says so in the log, the provider health, the privacy panel and the banner |
-| `none` | nothing | holds |
 
-The self-test asserts both directions: a rendered reference leaves the banner
-alone, and a photograph flips it.
+**But conditioning on the rendered plan was measured and it does not work.**
+Against `reactor/helios`:
+
+| setup | result |
+| --- | --- |
+| prompt only | a photorealistic living room. This is the default |
+| rendered plan, `image_strength` 1.0 | the model animates **the diagram**. The schema says 1.0 "locks the first frame to the reference", and it does |
+| rendered plan, `image_strength` 0.25 | a photo-textured version of the same diagram: the circles survive, the room does not |
+
+The model inherits the reference's geometry at any strength, and a top-down
+schematic is not the geometry of an eye-level shot. So the machinery is built,
+tested and documented, and switched **off**, because switching it on makes the
+output worse. What would work is an *eye-level* render of the scene graph rather
+than a plan; that is real work and is not built.
+
+The privacy argument above still stands and the self-test still asserts both
+directions — a rendered reference leaves the banner alone, a photograph flips
+it. It is simply not the best-looking option today.
 
 ### The rest
 

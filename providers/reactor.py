@@ -85,15 +85,35 @@ PROMPT_FIELD = os.getenv("REACTOR_PROMPT_FIELD", "prompt")
 START_COMMAND = os.getenv("REACTOR_START_COMMAND", "start")
 IMAGE_COMMAND = os.getenv("REACTOR_IMAGE_COMMAND", "set_image")
 IMAGE_FIELD = os.getenv("REACTOR_IMAGE_FIELD", "image")
+# 1.0 locks the first frame to the reference. Anything schematic needs this low,
+# and the measurement above says even low is not low enough for a plan view.
+IMAGE_STRENGTH = float(os.getenv("REACTOR_IMAGE_STRENGTH", "0.25"))
+STRENGTH_COMMAND = os.getenv("REACTOR_STRENGTH_COMMAND", "set_image_strength")
+STRENGTH_FIELD = os.getenv("REACTOR_STRENGTH_FIELD", "image_strength")
 
-# How the model gets a layout reference:
-#   "rendered" (default) — draw it from the scene graph. No camera involved, and
-#                          the scene graph already leaves the device, so nothing
-#                          new is disclosed. The privacy claim survives.
-#   "photo"             — upload the files in SKOPOS_REFERENCE_IMAGES. These are
-#                          real pixels and the app says so, loudly, everywhere.
-#   "none"              — text prompt only.
-REFERENCE_MODE = os.getenv("SKOPOS_REFERENCE", "rendered").strip().lower()
+# How the model gets a layout reference. Default is "none" — see MEASURED below.
+#   "none" (default)  — text prompt only. This is what was measured to work.
+#   "rendered"        — draw a plan from the scene graph and condition on it. No
+#                       camera involved and nothing new is disclosed, but see the
+#                       measurement: a top-down plan is the wrong signal for an
+#                       eye-level render.
+#   "photo"           — upload the files in SKOPOS_REFERENCE_IMAGES. Real pixels,
+#                       and the app says so loudly everywhere.
+#
+# MEASURED against reactor/helios on 12 Sept 2026:
+#   prompt only                        -> a photorealistic living room. Works.
+#   rendered plan, image_strength 1.0  -> the model animates the DIAGRAM. The
+#                                         schema says 1.0 "locks the first frame
+#                                         to the reference", and it does.
+#   rendered plan, image_strength 0.25 -> a photo-textured version of the same
+#                                         diagram: the circles survive, the room
+#                                         does not.
+# The model inherits the reference's geometry at any strength, and a top-down
+# schematic is not the geometry of an eye-level shot. Conditioning on a rendered
+# plan therefore makes the output worse, not better, and is off by default.
+# What would work is an EYE-LEVEL render of the scene graph rather than a plan;
+# that is a real piece of work and is not built.
+REFERENCE_MODE = os.getenv("SKOPOS_REFERENCE", "none").strip().lower()
 REFERENCE_IMAGES = [
     p.strip() for p in os.getenv("SKOPOS_REFERENCE_IMAGES", "").split(",") if p.strip()
 ]
@@ -101,8 +121,17 @@ REFERENCE_IMAGES = [
 # A frame older than this is treated as stale and we fall back rather than show
 # a frozen picture while claiming it is live.
 FRAME_STALE_SECONDS = float(os.getenv("REACTOR_FRAME_STALE_S", "2.0"))
-# How long render() will wait for the stream to catch up with a new prompt.
-PROMPT_SETTLE_SECONDS = float(os.getenv("REACTOR_PROMPT_SETTLE_S", "0.0"))
+# Reconnect backoff. 429 "no available capacity" is transient; keep trying.
+RETRY_BASE_SECONDS = float(os.getenv("REACTOR_RETRY_BASE_S", "5.0"))
+RETRY_MAX_SECONDS = float(os.getenv("REACTOR_RETRY_MAX_S", "60.0"))
+# How long render() waits for the stream to reflect a new prompt. Each elite
+# render is a separate configuration, so without this they would all show
+# whatever the stream happened to be generating for the previous one.
+PROMPT_SETTLE_SECONDS = float(os.getenv("REACTOR_PROMPT_SETTLE_S", "1.2"))
+# How long the FIRST render waits for the stream to spin up at all. Measured
+# cold start to first frame is a few seconds; without this the whole elite
+# sequence finishes on mock frames before generation has begun.
+FIRST_FRAME_WAIT_SECONDS = float(os.getenv("REACTOR_FIRST_FRAME_WAIT_S", "12.0"))
 
 
 def scene_to_prompt(sg: SceneGraph, req: RenderRequest) -> str:
@@ -167,6 +196,9 @@ class ReactorProvider(WorldModelProvider):
         self._last_prompt = ""
         self._schema: Optional[Dict[str, Any]] = None
         self._uploaded: List[str] = []
+        self._stop = False
+        self._attempts = 0
+        self._started = False
 
         self.live = False
         self.status = "not started"
@@ -211,16 +243,41 @@ class ReactorProvider(WorldModelProvider):
         self._loop = loop
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._main())
-        except Exception as exc:            # noqa: BLE001 — never kill the demo
-            self.live = False
-            self.status = "error: {}".format(exc)
-            log.exception("Reactor stream failed; falling back to mock frames")
+            loop.run_until_complete(self._supervise())
         finally:
             try:
                 loop.close()
             finally:
                 self._loop = None
+
+    async def _supervise(self) -> None:
+        """Keep trying to hold a session open, with backoff.
+
+        Reactor answers 429 "no available capacity" when its pool is busy, which
+        is a transient condition and exactly the sort of thing that happens
+        halfway through a demo. Retrying means the stream heals on its own
+        instead of staying on mock frames until someone restarts the server.
+        Every attempt and every failure is visible in health().status.
+        """
+        delay = RETRY_BASE_SECONDS
+        while not self._stop:
+            self._attempts += 1
+            try:
+                await self._main()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:        # noqa: BLE001 — never kill the demo
+                self.live = False
+                self.status = "error: {}".format(exc)
+                log.warning("Reactor session failed (attempt %d), retrying in %.0fs: %s",
+                            self._attempts, delay, exc)
+            else:
+                delay = RETRY_BASE_SECONDS  # clean exit; reconnect promptly
+            if self._stop:
+                break
+            self._reactor = None
+            await asyncio.sleep(delay)
+            delay = min(delay * 2.0, RETRY_MAX_SECONDS)
 
     async def _main(self) -> None:
         from reactor_sdk import Reactor, ReactorStatus, TrackKind
@@ -275,10 +332,13 @@ class ReactorProvider(WorldModelProvider):
         # upload_file requires READY, which connect() has now guaranteed.
         await self._upload_references(reactor)
 
-        try:
-            await reactor.send_command(START_COMMAND, {})
-        except Exception as exc:            # noqa: BLE001
-            log.warning("%s command failed (continuing): %s", START_COMMAND, exc)
+        # NOTE: `start` is deliberately NOT sent here. The model's schema says it
+        # "requires that a prompt has been set via set_prompt or schedule_prompt"
+        # and returns command_error otherwise — and at connect time render() has
+        # not pushed one yet. Sending it here left the session READY but idle,
+        # with every elite frame falling back to mock. Generation is started once,
+        # immediately after the first prompt lands. See _prompt_then_start().
+        self._started = False
 
         # Hold the loop open for the life of the process.
         await asyncio.Event().wait()
@@ -324,12 +384,25 @@ class ReactorProvider(WorldModelProvider):
             return
         try:
             await reactor.send_command(IMAGE_COMMAND, {IMAGE_FIELD: ref})
+            await self._set_strength(reactor)
             self._uploaded = ["scene_reference.png (rendered)"]
             log.info("sent %s with a rendered reference — %s",
                      IMAGE_COMMAND, describe(sg))
         except Exception as exc:            # noqa: BLE001
             log.error("%s failed — check the model's schema for the right command "
                       "and field name: %s", IMAGE_COMMAND, exc)
+
+    async def _set_strength(self, reactor: Any) -> None:
+        """Tell the model how hard to anchor to the reference.
+
+        Skipped silently if the model does not declare the command — not every
+        model has one, and a missing knob is not a failure.
+        """
+        try:
+            await reactor.send_command(STRENGTH_COMMAND, {STRENGTH_FIELD: IMAGE_STRENGTH})
+            log.info("%s = %.2f", STRENGTH_FIELD, IMAGE_STRENGTH)
+        except Exception as exc:            # noqa: BLE001
+            log.info("%s not accepted (continuing): %s", STRENGTH_COMMAND, exc)
 
     async def _upload_references(self, reactor: Any) -> None:
         """Upload the configured reference images and hand them to the model.
@@ -362,6 +435,7 @@ class ReactorProvider(WorldModelProvider):
         data = {IMAGE_FIELD: refs[0]} if len(refs) == 1 else {IMAGE_FIELD: refs}
         try:
             await reactor.send_command(IMAGE_COMMAND, data)
+            await self._set_strength(reactor)
             log.info("sent %s with %d reference image(s)", IMAGE_COMMAND, len(refs))
         except Exception as exc:            # noqa: BLE001
             log.error("%s failed — check the model's schema for the right command "
@@ -395,6 +469,32 @@ class ReactorProvider(WorldModelProvider):
         except Exception as exc:            # noqa: BLE001
             log.warning("%s failed: %s", command, exc)
 
+    async def _prompt_then_start(self, reactor: Any, prompt: str) -> None:
+        """Set the prompt, and begin generation the first time one lands."""
+        try:
+            await reactor.send_command(PROMPT_COMMAND, {PROMPT_FIELD: prompt})
+        except Exception as exc:            # noqa: BLE001
+            log.warning("%s failed: %s", PROMPT_COMMAND, exc)
+            return
+        if self._started:
+            return
+        try:
+            await reactor.send_command(START_COMMAND, {})
+            self._started = True
+            log.info("generation started")
+        except Exception as exc:            # noqa: BLE001
+            log.warning("%s failed: %s", START_COMMAND, exc)
+
+    def _push_prompt(self, prompt: str) -> None:
+        loop, reactor = self._loop, self._reactor
+        if loop is None or reactor is None or loop.is_closed():
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._prompt_then_start(reactor, prompt), loop)
+        except Exception as exc:            # noqa: BLE001
+            log.warning("prompt could not be scheduled: %s", exc)
+
     # ---------------------------------------------------------------- render
     def render(self, sg: SceneGraph, req: RenderRequest) -> Frame:
         t0 = time.perf_counter()
@@ -402,10 +502,20 @@ class ReactorProvider(WorldModelProvider):
         prompt = scene_to_prompt(sg, req)
         if prompt != self._last_prompt:
             self._last_prompt = prompt
-            self._send(PROMPT_COMMAND, {PROMPT_FIELD: prompt})
-            if PROMPT_SETTLE_SECONDS > 0:
-                # Give the stream a moment to reflect the new prompt. Off by
-                # default: it trades demo pace for fidelity.
+            self._push_prompt(prompt)
+
+            with self._lock:
+                seen = self._frames_in
+            if seen == 0 and self.api_key and FIRST_FRAME_WAIT_SECONDS > 0:
+                # Cold start: block once, briefly, for the stream to come up.
+                deadline = time.time() + FIRST_FRAME_WAIT_SECONDS
+                while time.time() < deadline:
+                    time.sleep(0.15)
+                    with self._lock:
+                        if self._frames_in:
+                            break
+            elif PROMPT_SETTLE_SECONDS > 0:
+                # Let the stream catch up with this configuration's prompt.
                 time.sleep(PROMPT_SETTLE_SECONDS)
 
         with self._lock:
@@ -419,7 +529,9 @@ class ReactorProvider(WorldModelProvider):
                 latency_ms=(time.perf_counter() - t0) * 1000.0,
                 step=req.step,
                 meta={"live": True, "model": self.model, "age_s": round(age, 3),
-                      "frames_in": n, "severity": round(req.severity, 3),
+                      "frames_in": n,
+            "connect_attempts": self._attempts,
+            "generating": self._started, "severity": round(req.severity, 3),
                       "culprit": req.culprit,
                       "reference_images": len(self._uploaded)},
             )
@@ -444,6 +556,8 @@ class ReactorProvider(WorldModelProvider):
             "api_url": self.api_url,
             "key_present": bool(self.api_key),
             "frames_in": n,
+            "connect_attempts": self._attempts,
+            "generating": self._started,
             "last_frame_age_s": round(time.time() - at, 2) if at else None,
             "reference_images": list(self._uploaded),
             "reference_mode": self.reference_mode,
@@ -455,6 +569,7 @@ class ReactorProvider(WorldModelProvider):
         }
 
     def close(self) -> None:
+        self._stop = True
         loop, reactor = self._loop, self._reactor
         if loop is not None and reactor is not None and not loop.is_closed():
             try:
