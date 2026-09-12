@@ -7,3 +7,5 @@ runs/*
 !runs/.gitkeep
 .DS_Store
 debug_frames/
+.uvicorn.out
+.uvicorn.err

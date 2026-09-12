@@ -24,7 +24,7 @@ import os
 import time
 from typing import Any, Dict
 
-from ..scene_graph import SceneGraph
+from engine import SceneGraph
 from .base import Frame, RenderRequest, WorldModelProvider
 from .mock import MockProvider
 from .reactor import scene_to_prompt

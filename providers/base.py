@@ -1,28 +1,34 @@
 """
 World-model provider interface.
 
-A provider turns a SceneGraph (+ a little render state) into frames. The
-SceneGraph is the only input; providers never see the user's original pixels.
+A provider turns a `SceneGraph` (from engine.py) into frames. The scene graph is
+the only input: providers never see the user's original pixels.
+
+Rendering is expensive, which is the whole reason `engine.surrogate` exists. We
+score tens of thousands of configurations on the scene graph and render only
+`campaign.elite(k)` — the worst handful.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from ..scene_graph import SceneGraph
+from engine import SceneGraph
 
 
 @dataclass
 class RenderRequest:
     seed: int = 0
     step: int = 0
-    severity: float = 0.0                 # 0-1 aggregate perturbation severity
-    strategy: Optional[str] = None        # the arm currently being attempted
-    agent_xy: Optional[list] = None       # [x, y] of the simulated agent
-    path: Optional[list] = None           # [[x,y], ...] attempted trajectory
+    severity: float = 0.0                 # surrogate severity of this configuration
+    rank: int = 0                         # position within the elite set
+    of: int = 0                           # size of the elite set
+    strategy: Optional[str] = None        # the arm being attempted
+    culprit: Optional[str] = None         # attributed object, from the surrogate
+    agent_xy: Optional[List[float]] = None
+    path: Optional[List[List[float]]] = None
     status: str = "running"               # running | success | fail
-    hazard_hit: Optional[str] = None
 
 
 @dataclass

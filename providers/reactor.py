@@ -51,7 +51,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from ..scene_graph import SceneGraph
+from engine import SceneGraph
 from .base import Frame, RenderRequest, WorldModelProvider
 from .mock import MockProvider
 
@@ -61,25 +61,30 @@ DEFAULT_MODEL = os.getenv("REACTOR_MODEL", "reactor/helios")  # [docs] example s
 
 
 def scene_to_prompt(sg: SceneGraph, req: RenderRequest) -> str:
-    """Turn a SceneGraph into a text prompt.
+    """Turn a scene graph into a text prompt.
 
     This is the weakest link in the whole adapter and we say so: a text prompt
-    throws away the metric layout we spent perception extracting. See
+    throws away the geometry the surrogate actually scores on. See
     TODO(reactor) item 4 — image conditioning is the right answer.
     """
     bits: List[str] = []
-    for o in sg.objects[:14]:
-        desc = o.label
-        if o.material != "unknown":
-            desc = o.material + " " + desc
-        bits.append("{} at ({:.1f}, {:.1f})".format(desc, o.pose.x, o.pose.y))
-    light = "dim" if sg.lighting.level < 0.35 else ("bright" if sg.lighting.level > 0.75 else "evenly lit")
-    if sg.lighting.glare > 0.4:
-        light += ", strong specular glare"
+    for it in sg.items:
+        if not it.present:
+            continue
+        desc = it.name.replace("_", " ")
+        if it.reflective:
+            desc = "glossy reflective " + desc
+        elif it.low_contrast:
+            desc = "matte black " + desc
+        bits.append("{} at ({:.1f}, {:.1f})".format(desc, it.x, it.y))
+    light = "dim" if sg.lighting < 0.35 else ("bright" if sg.lighting > 0.75 else "evenly lit")
+    clutter = ""
+    if sg.clutter:
+        clutter = " {} small unmodelled objects scattered on the floor.".format(sg.clutter)
     return (
-        "Photorealistic interior, eye-level view of a {} living room with {} floor. "
-        "Objects: {}. Camera slowly moving forward towards the table."
-    ).format(light, sg.floor_type, "; ".join(bits))
+        "Photorealistic interior, eye-level view of a {} living room. "
+        "Objects: {}.{} Camera moving slowly towards the {}."
+    ).format(light, "; ".join(bits), clutter, sg.target)
 
 
 class ReactorProvider(WorldModelProvider):
