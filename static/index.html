@@ -14,11 +14,10 @@
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--fg);
-       font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;}
-  a{color:var(--accent)}
-  /* Full-height app layout. Every ancestor of a scrollable/flexible area
-     carries min-height:0 so the stage can absorb the leftover space instead of
-     the page growing a scrollbar. */
+       font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+
+  /* Full-height layout: every ancestor of a flexible area carries min-height:0
+     so the render pane absorbs leftover space instead of the page scrolling. */
   .wrap{height:100vh;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}
 
   header{display:flex;align-items:center;gap:12px;padding:9px 16px;
@@ -30,15 +29,17 @@
          border-radius:4px;color:var(--dim);background:var(--panel2);white-space:nowrap}
   .badge b{color:var(--fg);font-weight:600}
   .badge.live{border-color:var(--good);color:var(--good)}
+  .badge.busy{border-color:var(--warn);color:var(--warn)}
   .badge.rec{border-color:var(--bad);color:var(--bad)}
 
   .privacy-bar{padding:5px 16px;background:#0e1a16;border-bottom:1px solid #17301f;
                color:#7fd8ae;font:11px/1.4 var(--mono)}
 
-  main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:10px;
+  main{display:grid;grid-template-columns:minmax(0,1fr) 352px;gap:10px;
        padding:10px;min-height:0}
-  .col-left{display:grid;grid-template-rows:minmax(0,2fr) minmax(120px,1fr);gap:10px;min-height:0;min-width:0}
-  .col-right{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;min-height:0}
+  .col-left{display:grid;grid-template-rows:minmax(0,2fr) minmax(120px,1fr);
+            gap:10px;min-height:0;min-width:0}
+  .col-right{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;min-height:0}
 
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
          display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
@@ -49,92 +50,72 @@
   .panel > h2 .sub{font-weight:400;letter-spacing:0;text-transform:none;color:var(--dimmer)}
   .panel .body{padding:9px 12px;min-width:0;min-height:0;overflow:auto}
 
-  /* main view — takes whatever height is left */
   #stage{background:#07090c;padding:6px;display:flex;align-items:center;
          justify-content:center;flex:1 1 auto;min-height:0;overflow:hidden}
   #view{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;
         border-radius:5px;display:block;background:#07090c}
+  #stage .empty{color:var(--dimmer);font:12px var(--mono)}
   .stagebar{display:flex;gap:10px;padding:6px 12px;border-top:1px solid var(--line);
             font:11px/1.5 var(--mono);color:var(--dim);flex-wrap:wrap;align-items:center;
             flex:0 0 auto}
 
-  /* controls */
-  .ctl{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
-  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-  .ctl label{font:11px/1.2 var(--mono);color:var(--fg)}
-  .ctl .val{font:11px/1 var(--mono);color:var(--accent);min-width:34px;text-align:right}
-  .ctl .hint{font-size:10px;color:var(--dimmer);line-height:1.3}
-  input[type=range]{width:100%;accent-color:var(--accent);height:15px;margin:0}
-
-  button{font:11px/1 var(--mono);padding:6px 9px;border-radius:5px;cursor:pointer;
+  button,select{font:11px/1 var(--mono);padding:6px 9px;border-radius:5px;cursor:pointer;
          background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
-  button:hover{border-color:var(--accent);color:var(--accent)}
+  button:hover,select:hover{border-color:var(--accent);color:var(--accent)}
   button.primary{border-color:var(--accent);color:var(--accent)}
   button.danger{border-color:var(--bad);color:var(--bad)}
-  .btnrow{display:flex;gap:6px;flex-wrap:wrap}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
+  label.fld{display:flex;flex-direction:column;gap:3px;font:10px var(--mono);color:var(--dim)}
+  input[type=number]{font:11px var(--mono);padding:5px 6px;border-radius:5px;width:86px;
+        background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
 
-  /* bandit bars */
-  .arm{margin-bottom:8px}
-  .arm:last-child{margin-bottom:0}
-  .arm .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
-            font:11px/1.3 var(--mono)}
-  .arm .nm{color:var(--fg)}
-  .arm.sel .nm{color:var(--accent);font-weight:700}
-  .arm .num{color:var(--dim);white-space:nowrap}
-  .arm .blurb{font-size:10px;color:var(--dimmer);margin:1px 0 3px}
-  .track{height:12px;background:#0b0f15;border:1px solid var(--line);border-radius:3px;
-         overflow:hidden;display:flex}
-  .fill{background:var(--accent);transition:width .28s ease}
-  .fill.bonus{background:rgba(74,168,224,.28);transition:width .28s ease}
-  .arm.sel .fill{background:var(--good)}
-  .arm.sel .fill.bonus{background:rgba(61,220,151,.28)}
-
-  /* bottom strip */
-  .strip{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 236px;
-         gap:10px;padding:0 10px 10px;height:clamp(152px,20vh,190px)}
-  #spark{width:100%;height:60px;display:block}
-  .bignum{font:700 36px/1 var(--mono);letter-spacing:-.02em}
-  .state{font:800 26px/1.1 var(--mono);letter-spacing:.05em;padding:8px 6px;
+  .strip{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) 240px;
+         gap:10px;padding:0 10px 10px;height:clamp(158px,21vh,196px)}
+  #spark{width:100%;height:66px;display:block}
+  .bignum{font:700 38px/1 var(--mono);letter-spacing:-.02em}
+  .state{font:800 25px/1.1 var(--mono);letter-spacing:.04em;padding:8px 6px;
          border-radius:6px;text-align:center;border:2px solid}
   .state.READY{color:var(--good);border-color:var(--good);background:rgba(61,220,151,.08)}
   .state.MARGINAL{color:var(--warn);border-color:var(--warn);background:rgba(242,181,68,.08)}
   .state.NOT{color:var(--bad);border-color:var(--bad);background:rgba(224,87,74,.08)}
+  .state.none{color:var(--dimmer);border-color:var(--line);font-size:15px}
 
-  table{width:100%;border-collapse:collapse;font:11px/1.4 var(--mono)}
+  table{width:100%;border-collapse:collapse;font:11px/1.45 var(--mono)}
   td,th{padding:2px 4px;text-align:left;border-bottom:1px solid #1a2029}
   th{color:var(--dimmer);font-weight:400}
   td.r,th.r{text-align:right}
+  .barcell{padding:0 4px}
+  .minibar{height:8px;background:#0b0f15;border-radius:2px;overflow:hidden}
+  .minibar > i{display:block;height:100%;background:var(--bad);opacity:.85}
 
+  .kv{display:flex;justify-content:space-between;font:11px/1.7 var(--mono);gap:8px;
+      align-items:baseline}
+  .kv span:first-child{color:var(--dim);flex:0 1 auto}
+  .kv b{text-align:right;overflow-wrap:anywhere;min-width:0}
   pre{margin:0;font:10.5px/1.45 var(--mono);color:#a8d8bf;white-space:pre-wrap;
       word-break:break-word}
-  .kv{display:flex;justify-content:space-between;font:11px/1.7 var(--mono);gap:8px}
-  .kv span:first-child{color:var(--dim)}
+  .scroll{overflow:auto}
+  .note{font:10px/1.35 var(--mono);color:var(--dimmer)}
   .flash{animation:fl .5s ease}
   @keyframes fl{from{background:rgba(74,168,224,.22)}to{background:transparent}}
   #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
          background:var(--panel2);border:1px solid var(--accent);color:var(--accent);
          padding:8px 14px;border-radius:6px;font:11px/1 var(--mono);opacity:0;
-         transition:opacity .25s;pointer-events:none;z-index:50}
+         transition:opacity .25s;pointer-events:none;z-index:50;max-width:70vw;text-align:center}
   #toast.on{opacity:1}
-  .scroll{overflow:auto}
-  /* Short windows: stop trying to fit one screen, let the page scroll so
-     nothing is clipped. */
-  @media (max-height:760px){
+
+  @media (max-height:780px){
     .wrap{height:auto;min-height:100vh}
-    .col-left{grid-template-rows:none}
-    .col-right{grid-template-rows:none}
+    .col-left,.col-right{grid-template-rows:none}
     #view{max-height:44vh}
-    #payload{max-height:150px}
-    #axes{max-height:230px}
     .strip{height:auto}
     .panel{overflow:visible}
+    .panel .body{overflow:visible}
   }
-  @media (max-width:1120px){
-    .wrap{height:auto;min-height:100vh}
+  @media (max-width:1140px){
     main{grid-template-columns:minmax(0,1fr)}
-    .col-left,.col-right{grid-template-rows:none}
-    #view{max-height:46vh}
-    .strip{grid-template-columns:minmax(0,1fr);height:auto}
+    .strip{grid-template-columns:minmax(0,1fr)}
   }
 </style>
 </head>
@@ -145,10 +126,10 @@
   <div class="logo">SKOPOS</div>
   <div class="tag">a home robot should meet your home before it ships to your home</div>
   <div class="spacer"></div>
-  <div class="badge" id="b-seed">seed <b>—</b></div>
-  <div class="badge" id="b-prov">provider <b>—</b></div>
-  <div class="badge" id="b-attempt">attempt <b>0</b></div>
-  <div class="badge" id="b-conn">connecting…</div>
+  <div class="badge" id="b-samples">samples <b>&mdash;</b></div>
+  <div class="badge" id="b-seed">seed <b>&mdash;</b></div>
+  <div class="badge" id="b-prov">provider <b>&mdash;</b></div>
+  <div class="badge" id="b-conn">connecting&hellip;</div>
 </header>
 
 <div class="privacy-bar" id="privacy-line">PRIVACY: frames are processed in memory and discarded; only the SceneGraph (structured text, no pixels) leaves this device.</div>
@@ -156,75 +137,57 @@
 <main>
   <div class="col-left">
     <div class="panel">
-      <h2>rendered room <span class="sub" id="room-sub"></span></h2>
-      <div id="stage"><img id="view" alt="rendered room"></div>
+      <h2>room render <span class="sub" id="render-sub">&mdash; mock provider</span></h2>
+      <div id="stage"><div class="empty">run a campaign to render the room</div></div>
       <div class="stagebar">
-        <span id="s-arm">arm —</span>
-        <span id="s-fid">fidelity —</span>
-        <span id="s-lat">latency —</span>
-        <span id="s-sev">severity —</span>
-        <span id="s-w">weight —</span>
-        <span class="spacer" style="flex:1"></span>
-        <span id="s-perts"></span>
+        <span id="s-strategy">strategy &mdash;</span>
+        <span id="s-sev">severity &mdash;</span>
+        <span id="s-culprit"></span>
+        <span id="s-fid">fidelity &mdash;</span>
+        <span id="s-lat">render &mdash;</span>
       </div>
     </div>
 
-    <div class="panel" id="payload-panel">
-      <h2>what leaves your device <span class="sub">— the exact payload, live</span></h2>
-      <div class="body" style="display:grid;grid-template-columns:158px minmax(0,1fr);gap:12px;min-height:0">
-        <div>
-          <div class="kv"><span>frames seen</span><b id="p-seen">0</b></div>
-          <div class="kv"><span>frames discarded</span><b id="p-disc" style="color:var(--good)">0</b></div>
-          <div class="kv"><span>frames retained</span><b id="p-ret" style="color:var(--good)">0</b></div>
-          <div class="kv"><span>pixels sent</span><b style="color:var(--good)">0</b></div>
-          <div class="kv"><span>payloads out</span><b id="p-count">0</b></div>
-          <div class="kv"><span>bytes out</span><b id="p-bytes">0</b></div>
-          <div class="hint" style="font-size:10px;color:var(--dimmer);margin-top:6px">
-            Everything to the right is all that crosses a network boundary. Read it.
-          </div>
-        </div>
-        <pre id="payload" class="scroll" style="height:100%">—</pre>
-      </div>
+    <div class="panel">
+      <h2>scene graph <span class="sub">&mdash; the exact payload that would leave the device</span></h2>
+      <div class="body scroll"><pre id="payload">&mdash;</pre></div>
     </div>
   </div>
 
   <div class="col-right">
     <div class="panel">
-      <h2>contextual bandit <span class="sub" id="bandit-sub">— LinUCB, not a trained policy</span></h2>
-      <div class="body" id="arms" style="overflow:visible"></div>
-    </div>
-
-    <div class="panel">
-      <h2>perturbation prior <span class="sub">— rates, not measurements</span></h2>
-      <div class="body scroll" id="axes"></div>
-    </div>
-
-    <div class="panel">
-      <h2>run control</h2>
+      <h2>campaign</h2>
       <div class="body">
-        <div class="btnrow" style="margin-bottom:8px">
-          <button id="btn-pause" class="primary">Pause</button>
-          <button id="btn-shift">Shift room</button>
-          <button id="btn-reset">Reset</button>
-        </div>
-        <div class="btnrow" style="margin-bottom:8px">
-          <button data-preset="clean">Clean room</button>
-          <button data-preset="bad">Bad day</button>
-          <button data-preset="worst">Worst case</button>
+        <div class="btnrow" style="margin-bottom:9px">
+          <label class="fld">samples
+            <input type="number" id="in-samples" value="20000" min="100" max="200000" step="1000">
+          </label>
+          <label class="fld">seed
+            <input type="number" id="in-seed" value="20260912">
+          </label>
+          <label class="fld">strategy
+            <select id="in-strategy"></select>
+          </label>
         </div>
         <div class="btnrow">
-          <button id="btn-rec">● Record run</button>
-          <button id="btn-replay">▶ Replay</button>
+          <button id="btn-run" class="primary">Run campaign</button>
         </div>
-        <div class="ctl" style="margin-top:10px">
-          <div class="row"><label for="sp">frame interval</label><span class="val" id="sp-v">70ms</span></div>
-          <input type="range" id="sp" min="10" max="300" step="10" value="70">
+        <div class="note" style="margin-top:9px">
+          Scoring happens on the scene graph, not on rendered frames. That is why
+          twenty thousand configurations is affordable and why only a handful are
+          ever rendered.
         </div>
-        <div class="ctl">
-          <div class="row"><label for="rs">attempts per room</label><span class="val" id="rs-v">8</span></div>
-          <input type="range" id="rs" min="1" max="30" step="1" value="8">
-          <div class="hint">A new room is drawn from the prior every N attempts.</div>
-        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>campaign result</h2>
+      <div class="body scroll">
+        <div class="kv"><span>P(failure) under the proposal</span><b id="m-pfail">&mdash;</b></div>
+        <div class="kv"><span>failures observed</span><b id="m-fails">&mdash;</b></div>
+        <div class="kv"><span>strategy</span><b id="m-strategy">&mdash;</b></div>
+        <div class="kv"><span>proposal</span><b id="m-proposal" style="font-size:10px">&mdash;</b></div>
+        <div class="note" style="margin-top:10px" id="m-note"></div>
       </div>
     </div>
   </div>
@@ -232,30 +195,24 @@
 
 <div class="strip">
   <div class="panel">
-    <h2>rolling autonomous success <span class="sub" id="win-sub"></span></h2>
+    <h2>readiness history <span class="sub">&mdash; one point per campaign</span></h2>
     <div class="body" style="padding:8px 12px 10px">
-      <canvas id="spark" width="600" height="64"></canvas>
-      <div class="kv" style="margin-top:4px">
-        <span>weighted autonomous success (IS-corrected)</span><b id="m-ws">—</b>
-      </div>
-      <div class="kv"><span>weighted hazard-contact rate</span><b id="m-wh">—</b></div>
-      <div class="kv"><span>deferred to a human (not success)</span><b id="m-def">—</b></div>
-      <div class="kv"><span>ESS / coverage</span><b id="m-ess">—</b></div>
+      <canvas id="spark" width="600" height="66"></canvas>
+      <div class="kv" style="margin-top:2px"><span>campaigns run</span><b id="m-runs">0</b></div>
     </div>
   </div>
 
   <div class="panel">
-    <h2>hazard attribution <span class="sub">— which flagged object caused the failure</span></h2>
-    <div class="body scroll" id="haz-wrap" style="padding:8px 12px"><table id="haz"><tbody></tbody></table></div>
+    <h2>hazards <span class="sub">&mdash; which object causes the failures, worst first</span></h2>
+    <div class="body scroll" style="padding:6px 12px"><table id="haz"><tbody></tbody></table></div>
   </div>
 
   <div class="panel">
     <h2>readiness</h2>
-    <div class="body" style="text-align:center;padding:10px">
-      <div class="bignum" id="r-score">—</div>
-      <div style="font:10px var(--mono);color:var(--dimmer);margin:2px 0 8px">/ 100</div>
-      <div class="state" id="r-state">—</div>
-      <div style="font:9.5px/1.4 var(--mono);color:var(--dimmer);margin-top:8px" id="r-formula"></div>
+    <div class="body" style="text-align:center;padding:8px 10px">
+      <div class="bignum" id="r-score">&mdash;</div>
+      <div style="font:10px var(--mono);color:var(--dimmer);margin:0 0 7px">/ 100</div>
+      <div class="state none" id="r-state">no campaign yet</div>
     </div>
   </div>
 </div>
@@ -266,21 +223,23 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-let ws = null, state = null, paused = false, recording = false, replaying = false;
-let lastArms = [];
+let ws = null, state = null, busy = false;
 
-function toast(t){ const el=$("toast"); el.textContent=t; el.classList.add("on");
-  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("on"), 2200); }
-
-function send(msg){ if(ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }
+function toast(t){
+  const el = $("toast"); el.textContent = t; el.classList.add("on");
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("on"), 2600);
+}
+function send(msg){ if(ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
 // ---------------------------------------------------------------- websocket
 function connect(){
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(proto + "://" + location.host + "/ws");
-  ws.onopen = () => { $("b-conn").textContent = "connected"; $("b-conn").className="badge live"; };
-  ws.onclose = () => { $("b-conn").textContent = "disconnected"; $("b-conn").className="badge";
-                       setTimeout(connect, 1200); };
+  ws.onopen = () => { $("b-conn").textContent = "connected"; $("b-conn").className = "badge live"; };
+  ws.onclose = () => {
+    $("b-conn").textContent = "disconnected"; $("b-conn").className = "badge";
+    setTimeout(connect, 1200);
+  };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
 }
 
@@ -288,264 +247,144 @@ function handle(m){
   switch(m.type){
     case "hello": $("privacy-line").textContent = m.assertion; break;
     case "state": state = m; renderState(m); break;
-    case "attempt_start": onAttemptStart(m); break;
+    case "campaign_start": setBusy(true, m.samples); break;
+    case "campaign_done": setBusy(false); onCampaign(m); break;
     case "frame": onFrame(m); break;
-    case "attempt_end": onAttemptEnd(m); break;
-    case "recording":
-      recording = m.on;
-      $("btn-rec").textContent = m.on ? "■ Stop recording" : "● Record run";
-      $("btn-rec").className = m.on ? "danger" : "";
-      if(m.saved) toast("saved " + m.saved.run_id + " (" + m.saved.events + " events)");
-      else if(m.on) toast("recording " + m.run_id);
-      break;
-    case "replay":
-      replaying = m.on;
-      $("btn-replay").textContent = m.on ? "■ Stop replay" : "▶ Replay";
-      $("b-conn").textContent = m.on ? "REPLAY (offline)" : "connected";
-      $("b-conn").className = m.on ? "badge rec" : "badge live";
-      break;
-    case "runs": pickRun(m.runs); break;
     case "toast": toast(m.text); break;
   }
 }
 
+function setBusy(on, samples){
+  busy = on;
+  $("btn-run").disabled = on;
+  $("b-conn").textContent = on ? ("sampling " + (samples || 0).toLocaleString() + "…") : "connected";
+  $("b-conn").className = on ? "badge busy" : "badge live";
+}
+
 // ------------------------------------------------------------------ render
 function renderState(s){
+  $("b-samples").innerHTML = "samples <b>" + s.samples.toLocaleString() + "</b>";
   $("b-seed").innerHTML = "seed <b>" + s.seed + "</b>";
   const p = s.provider;
   $("b-prov").innerHTML = "provider <b>" + p.provider + (p.live ? " · live" : " · mock") + "</b>";
   $("b-prov").className = "badge" + (p.live ? " live" : "");
-  $("b-attempt").innerHTML = "attempt <b>" + s.attempt + "</b>";
   $("privacy-line").textContent = s.assertion;
-  $("win-sub").textContent = "— last " + s.metrics.window + " attempts";
-  $("bandit-sub").textContent = "— LinUCB, alpha " + s.bandit.alpha +
-      ", not a trained policy; bars scaled across the current spread";
-  if(!$("axes").dataset.built) buildAxes(s);
-  drawArms(s.bandit);
-  drawMetrics(s.metrics);
-  drawPrivacy(s.privacy);
-  $("rs").value = s.resample_every; $("rs-v").textContent = s.resample_every;
-}
+  $("in-samples").value = s.samples;
+  $("in-seed").value = s.seed;
 
-function buildAxes(s){
-  const box = $("axes"); box.innerHTML = "";
-  s.axes.forEach(ax => {
-    const d = document.createElement("div"); d.className = "ctl";
-    d.innerHTML =
-      '<div class="row"><label for="ax-'+ax+'">'+ax+'</label>'+
-      '<span class="val" id="axv-'+ax+'">'+s.prior.rates[ax].toFixed(2)+'</span></div>'+
-      '<input type="range" id="ax-'+ax+'" min="0" max="1" step="0.01" value="'+s.prior.rates[ax]+'">'+
-      '<div class="hint">'+s.axis_desc[ax]+'</div>';
-    box.appendChild(d);
-    d.querySelector("input").addEventListener("input", (e) => {
-      $("axv-"+ax).textContent = (+e.target.value).toFixed(2);
-      const rates = {}; rates[ax] = +e.target.value;
-      send({type:"set_rates", rates});
+  const sel = $("in-strategy");
+  if(!sel.options.length){
+    s.strategies.forEach(st => {
+      const o = document.createElement("option");
+      o.value = st; o.textContent = st;
+      sel.appendChild(o);
     });
-  });
-  const t = document.createElement("div"); t.className = "ctl";
-  t.style.borderTop = "1px solid var(--line)"; t.style.paddingTop = "10px";
-  t.innerHTML =
-    '<div class="row"><label for="tilt">importance tilt</label>'+
-    '<span class="val" id="tilt-v">'+s.prior.tilt.toFixed(2)+'</span></div>'+
-    '<input type="range" id="tilt" min="0" max="0.9" step="0.05" value="'+s.prior.tilt+'">'+
-    '<div class="hint">0 = sample straight from the prior, every weight exactly 1. '+
-    'Higher oversamples rare severe rooms and corrects with w = p/q. '+
-    'Changing any of these resets the measurements: weights are relative to a '+
-    'specific prior.</div>';
-  box.appendChild(t);
-  t.querySelector("input").addEventListener("input", (e) => {
-    $("tilt-v").textContent = (+e.target.value).toFixed(2);
-    send({type:"set_tilt", tilt:+e.target.value});
-  });
-  box.dataset.built = "1";
-}
-
-function drawArms(b){
-  const box = $("arms");
-  const order = b.arms.map(a=>a.name);
-  const changed = JSON.stringify(order.slice().sort((x,y)=>
-      b.arms.find(a=>a.name===y).ucb - b.arms.find(a=>a.name===x).ucb)) !== JSON.stringify(lastArms);
-  const ranked = b.arms.slice().sort((x,y)=>y.ucb-x.ucb);
-  lastArms = JSON.stringify(ranked.map(a=>a.name));
-  // Bars are scaled across the current spread, not from zero: the arms often
-  // sit within a few hundredths of each other and a zero-based bar would make
-  // four identical-looking blocks. The numeric value is printed beside each.
-  const vals = b.arms.map(a=>a.ucb);
-  const hi = Math.max(...vals), lo = Math.min(...vals);
-  const span = Math.max(hi - lo, 1e-6);
-  const pos = (v) => 12 + 88 * (v - lo) / span;   // 12%..100%
-  box.innerHTML = "";
-  ranked.forEach((a,i) => {
-    const d = document.createElement("div");
-    d.className = "arm" + (i===0 ? " sel" : "");
-    const total = pos(a.ucb);
-    const bw = Math.max(1.5, Math.min(total - 1, total * (a.bonus / Math.max(a.ucb, 1e-6))));
-    const mw = Math.max(0, total - bw);
-    d.innerHTML =
-      '<div class="top"><span class="nm">'+a.name+'</span>'+
-      '<span class="num">'+a.ucb.toFixed(3)+'  n='+a.pulls+'</span></div>'+
-      '<div class="blurb">'+a.blurb+' · value '+a.mean.toFixed(3)+
-      ' ± '+a.bonus.toFixed(3)+' · success '+(100*a.success_rate).toFixed(0)+'%</div>'+
-      '<div class="track"><div class="fill" style="width:'+mw+'%"></div>'+
-      '<div class="fill bonus" style="width:'+bw+'%"></div></div>';
-    box.appendChild(d);
-  });
-}
-
-function drawMetrics(m){
-  const r = m.readiness;
-  $("r-score").textContent = r.score.toFixed(1);
-  const st = $("r-state");
-  st.textContent = r.state;
-  st.className = "state " + (r.state === "READY" ? "READY" : r.state === "MARGINAL" ? "MARGINAL" : "NOT");
-  $("r-formula").textContent = r.formula;
-  $("m-ws").textContent = (100*r.terms.weighted_success).toFixed(1) + "%";
-  $("m-wh").textContent = (100*r.terms.weighted_hazard_rate).toFixed(1) + "%";
-  const dr = r.terms.deferral_rate || 0;
-  $("m-def").textContent = (100*dr).toFixed(1) + "%";
-  $("m-def").style.color = dr > 0.4 ? "var(--warn)" : "var(--fg)";
-  $("m-ess").textContent = r.ess.toFixed(1) + " / n=" + r.n +
-      "  (coverage " + (100*r.terms.coverage_ess).toFixed(0) + "%)";
-  spark(m.sparkline);
-  const tb = $("haz").querySelector("tbody");
-  tb.innerHTML = '<tr><th>object</th><th>flag</th><th class="r">fails</th><th class="r">share</th></tr>';
-  (m.hazard_attribution||[]).slice(0,7).forEach(h => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = "<td>"+h.object_id+"</td><td style='color:var(--bad)'>"+h.flag+
-                   "</td><td class='r'>"+h.failures+"</td><td class='r'>"+(100*h.share).toFixed(0)+"%</td>";
-    tb.appendChild(tr);
-  });
-  if(!(m.hazard_attribution||[]).length)
-    tb.innerHTML += "<tr><td colspan=4 style='color:var(--dimmer)'>no hazard-caused failures yet</td></tr>";
-}
-
-function drawPrivacy(p){
-  $("p-seen").textContent = p.frames_seen;
-  $("p-disc").textContent = p.frames_discarded;
-  $("p-ret").textContent = p.frames_retained;
-  $("p-ret").style.color = p.frames_retained ? "var(--bad)" : "var(--good)";
-  $("p-count").textContent = p.payloads_out;
-  $("p-bytes").textContent = (p.bytes_out/1024).toFixed(1) + " KB";
-  if(p.debug_keep_frames){
-    $("privacy-line").style.background = "#2a1212";
-    $("privacy-line").style.color = "#ff9b90";
   }
+  sel.value = s.strategy;
+
+  if(s.scene) $("payload").textContent = JSON.stringify(s.scene, null, 2);
+  if(s.report) drawReport(s.report);
+  drawSpark(s.history || []);
+  $("m-runs").textContent = (s.history || []).length;
 }
 
-function spark(vals){
-  const c = $("spark"), ctx = c.getContext("2d");
-  const w = c.width = c.clientWidth * (window.devicePixelRatio||1);
-  const h = c.height = 64 * (window.devicePixelRatio||1);
-  ctx.clearRect(0,0,w,h);
-  ctx.strokeStyle = "#222a35"; ctx.lineWidth = 1;
-  [0,0.5,1].forEach(f => { const y = h - f*(h-8) - 4;
-    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); });
-  if(!vals || vals.length < 2) return;
-  const n = vals.length;
-  ctx.lineWidth = 2*(window.devicePixelRatio||1);
-  ctx.strokeStyle = "#4aa8e0";
-  ctx.beginPath();
-  vals.forEach((v,i) => {
-    const x = i/(n-1)*w, y = h - v*(h-8) - 4;
-    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
-  });
-  ctx.stroke();
-  const last = vals[n-1];
-  ctx.fillStyle = last > .7 ? "#3ddc97" : last > .4 ? "#f2b544" : "#e0574a";
-  ctx.beginPath(); ctx.arc(w-3, h-last*(h-8)-4, 4*(window.devicePixelRatio||1), 0, 7); ctx.fill();
-  ctx.font = (11*(window.devicePixelRatio||1))+"px ui-monospace,monospace";
-  ctx.fillText((100*last).toFixed(0)+"%", w-46*(window.devicePixelRatio||1),
-               h-last*(h-8)-12*(window.devicePixelRatio||1));
-}
-
-// ------------------------------------------------------------------ events
-function onAttemptStart(m){
-  $("b-attempt").innerHTML = "attempt <b>" + m.attempt + "</b>";
-  $("s-arm").textContent = "arm " + m.arm + " (p=" + m.p_success.toFixed(2) + ")";
-  $("s-sev").textContent = "severity " + m.room.severity.toFixed(2);
-  $("s-w").textContent = "weight " + m.room.weight.toFixed(3) + (m.room.clipped ? " (clipped)" : "");
-  const act = (m.room.perturbations||[]).filter(p=>p.active);
-  $("s-perts").textContent = act.length
-      ? act.map(p => p.axis + " " + p.magnitude.toFixed(2)).join("  ·  ")
-      : "unperturbed room";
-  $("room-sub").textContent = "— " + (act.length ? act.length + " active axes" : "base room");
+function onCampaign(m){
+  drawReport(m.report);
+  drawSpark(m.history);
+  $("m-runs").textContent = m.history.length;
   const pay = $("payload");
   pay.textContent = m.scene_payload;
   pay.classList.remove("flash"); void pay.offsetWidth; pay.classList.add("flash");
 }
 
+function drawReport(r){
+  const st = r.readiness.state;
+  $("r-score").textContent = r.readiness.score;
+  const el = $("r-state");
+  el.textContent = st;
+  el.className = "state " + (st === "READY" ? "READY" : st === "MARGINAL" ? "MARGINAL" : "NOT");
+
+  $("m-pfail").textContent = (100 * r.p_fail).toFixed(2) + "%";
+  const totalFails = r.attribution.reduce((a, h) => a + h.failures, 0);
+  $("m-fails").textContent = totalFails.toLocaleString() + " / " + r.samples.toLocaleString();
+  $("m-strategy").textContent = r.strategy;
+  $("b-samples").innerHTML = "samples <b>" + r.samples.toLocaleString() + "</b>";
+  $("b-seed").innerHTML = "seed <b>" + r.seed + "</b>";
+  $("m-proposal").textContent = r.proposal;
+  $("m-note").textContent =
+    "readiness = 100 × (1 − P(failure)) under the proposal. "
+    + "READY at 85 and above, MARGINAL at 60, below that NOT READY.";
+
+  const tb = $("haz").querySelector("tbody");
+  tb.innerHTML = '<tr><th>object</th><th class="barcell"></th><th class="r">failures</th><th class="r">share</th></tr>';
+  const top = r.attribution[0] ? r.attribution[0].failures : 1;
+  r.attribution.slice(0, 8).forEach(h => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + h.object.replace(/_/g, " ") + "</td>" +
+      '<td class="barcell" style="width:34%"><div class="minibar"><i style="width:' +
+        (100 * h.failures / top).toFixed(1) + '%"></i></div></td>' +
+      '<td class="r">' + h.failures.toLocaleString() + "</td>" +
+      '<td class="r">' + (100 * h.share).toFixed(1) + "%</td>";
+    tb.appendChild(tr);
+  });
+  if(!r.attribution.length)
+    tb.innerHTML += '<tr><td colspan="4" style="color:var(--dimmer)">no failures in this campaign</td></tr>';
+}
+
 function onFrame(m){
-  $("view").src = m.frame.data_url;
-  $("s-fid").textContent = "fidelity " + (m.frame.meta.fidelity!==undefined
-      ? m.frame.meta.fidelity.toFixed(2) : "—");
+  const stage = $("stage");
+  let img = $("view");
+  if(!img){
+    stage.innerHTML = '<img id="view" alt="room render">';
+    img = $("view");
+  }
+  img.src = m.frame.data_url;
+  const meta = m.frame.meta || {};
+  $("s-strategy").textContent = "strategy " + (m.strategy || (state && state.strategy) || "—");
+  $("s-sev").textContent = "severity " + (meta.severity !== undefined ? meta.severity.toFixed(2) : "—");
+  $("s-culprit").textContent = (meta.culprit && meta.culprit !== "none") ? ("culprit " + meta.culprit) : "";
+  $("s-fid").textContent = "fidelity " + (meta.fidelity !== undefined ? meta.fidelity.toFixed(2) : "—");
   $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
 }
 
-function onAttemptEnd(m){
-  drawArms(m.bandit);
-  drawMetrics(m.metrics);
-  drawPrivacy(m.privacy);
+// canvas sparkline, no chart library
+function drawSpark(vals){
+  const c = $("spark"), ctx = c.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.width = c.clientWidth * dpr;
+  const h = c.height = 66 * dpr;
+  ctx.clearRect(0, 0, w, h);
+  // guides at the engine's readiness bands
+  [[0,"#222a35"],[60,"#3a2e1c"],[85,"#1c3a2b"],[100,"#222a35"]].forEach(function(g){
+    const y = h - (g[0]/100) * (h - 10) - 5;
+    ctx.strokeStyle = g[1]; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  });
+  if(!vals.length) return;
+  const n = vals.length;
+  const xAt = (i) => n === 1 ? w/2 : i/(n-1)*w;
+  const yAt = (v) => h - (v/100)*(h-10) - 5;
+  ctx.lineWidth = 2*dpr; ctx.strokeStyle = "#4aa8e0";
+  ctx.beginPath();
+  vals.forEach((v,i) => i ? ctx.lineTo(xAt(i), yAt(v)) : ctx.moveTo(xAt(i), yAt(v)));
+  ctx.stroke();
+  const last = vals[n-1];
+  ctx.fillStyle = last >= 85 ? "#3ddc97" : last >= 60 ? "#f2b544" : "#e0574a";
+  ctx.beginPath(); ctx.arc(xAt(n-1), yAt(last), 4*dpr, 0, 7); ctx.fill();
+  ctx.font = (11*dpr) + "px ui-monospace,monospace";
+  ctx.fillText(String(last), Math.max(0, xAt(n-1) - 30*dpr), yAt(last) - 9*dpr);
 }
 
 // ---------------------------------------------------------------- controls
-$("btn-pause").onclick = () => {
-  paused = !paused;
-  send({type: paused ? "pause" : "resume"});
-  $("btn-pause").textContent = paused ? "Resume" : "Pause";
-  $("btn-pause").className = paused ? "" : "primary";
+$("btn-run").onclick = () => {
+  if(busy) return;
+  send({type:"run_campaign",
+        samples: parseInt($("in-samples").value, 10),
+        seed: parseInt($("in-seed").value, 10),
+        strategy: $("in-strategy").value});
 };
-$("btn-shift").onclick = () => send({type:"shift_room"});
-
-// Demo presets. Each sets every axis rate and the tilt, then draws a fresh
-// room, so a run can be moved between regimes with one click on stage.
-const PRESETS = {
-  clean: {label:"clean room", tilt:0.0, rates:{object_moved:0, object_removed:0,
-    lighting:0, occlusion:0, clutter_added:0, reflective_surface:0}},
-  bad:   {label:"bad day", tilt:0.55, rates:{object_moved:0.8, object_removed:0.3,
-    lighting:0.9, occlusion:0.8, clutter_added:0.7, reflective_surface:0.4}},
-  worst: {label:"worst case", tilt:0.9, rates:{object_moved:0.8, object_removed:1.0,
-    lighting:1.0, occlusion:1.0, clutter_added:1.0, reflective_surface:0.8}}
-};
-document.querySelectorAll("[data-preset]").forEach(btn => {
-  btn.onclick = () => {
-    const p = PRESETS[btn.dataset.preset];
-    send({type:"set_rates", rates:p.rates});
-    send({type:"set_tilt", tilt:p.tilt});
-    send({type:"shift_room"});
-    Object.entries(p.rates).forEach(([k,v]) => {
-      const el = $("ax-"+k); if(el){ el.value = v; $("axv-"+k).textContent = v.toFixed(2); }
-    });
-    const t = $("tilt"); if(t){ t.value = p.tilt; $("tilt-v").textContent = p.tilt.toFixed(2); }
-    toast(p.label + " \u2014 new room drawn; watch the bars re-order");
-  };
-});
-$("btn-reset").onclick = () => {
-  const s = prompt("Reset with seed:", state ? state.seed : 20260912);
-  if(s !== null) send({type:"reset", seed: parseInt(s,10)});
-};
-$("btn-rec").onclick = () => send({type: recording ? "record_stop" : "record_start"});
-$("btn-replay").onclick = () => {
-  if(replaying){ send({type:"replay_stop"}); return; }
-  send({type:"list_runs"});
-};
-function pickRun(runs){
-  if(!runs.length){ toast("no recorded runs yet — hit Record run first"); return; }
-  const lines = runs.slice(0,10).map((r,i)=> i+": "+r.run_id+"  ("+r.events+" events, seed "+r.seed+")");
-  const pick = prompt("Replay which run?\n\n" + lines.join("\n"), "0");
-  if(pick === null) return;
-  const r = runs[parseInt(pick,10)];
-  if(r) send({type:"replay", run_id:r.run_id});
-}
-$("sp").addEventListener("input", e => {
-  $("sp-v").textContent = e.target.value + "ms";
-  send({type:"set_speed", ms:+e.target.value});
-});
-$("rs").addEventListener("input", e => {
-  $("rs-v").textContent = e.target.value;
-  send({type:"set_resample", every:+e.target.value});
-});
-window.addEventListener("resize", () => { if(state) spark(state.metrics.sparkline); });
+window.addEventListener("resize", () => { if(state) drawSpark(state.history || []); });
 
 connect();
 </script>

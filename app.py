@@ -36,7 +36,7 @@ from engine import (
     reliable,
 )
 from privacy import PrivacyLedger, startup_assertion
-from providers.base import WorldModelProvider
+from providers.base import RenderRequest, WorldModelProvider
 from recorder import Recorder, list_runs, replay_events
 
 log = logging.getLogger("skopos")
@@ -253,6 +253,7 @@ class Loop:
                              "strategy": strategy or self.d.strategy})
             report = await asyncio.to_thread(self.d.run_campaign, strategy)
             payload = self.d.scene_payload()
+            await self.render_base()
             await self.send({
                 "type": "campaign_done",
                 "report": report,
@@ -263,6 +264,19 @@ class Loop:
             })
         finally:
             self.busy = False
+
+    async def render_base(self) -> None:
+        """Render the unperturbed room once, so the pane is never blank.
+
+        The elite renders (the ones that matter) come from a separate stream.
+        """
+        sev, culprit = engine.surrogate(self.d.scene, self.d.strategy)
+        frame = self.d.provider.render(self.d.scene, RenderRequest(
+            seed=self.d.seed, step=0, severity=sev, culprit=culprit,
+            strategy=self.d.strategy, status="running",
+        ))
+        await self.send({"type": "frame", "frame": frame.to_dict(),
+                         "strategy": self.d.strategy, "label": "base room"})
 
     async def handle(self, msg: Dict[str, Any]) -> None:
         t = msg.get("type")
