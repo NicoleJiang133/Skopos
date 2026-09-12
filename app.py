@@ -29,11 +29,13 @@ from fastapi.staticfiles import StaticFiles
 import engine
 from engine import (
     ARCHETYPES,
+    DEFENSIVE,
     DEMO_ROOM,
     STRATEGIES,
     Campaign,
     Item,
     SceneGraph,
+    cem_search,
     default_proposal,
     reliable,
 )
@@ -59,6 +61,10 @@ BANDIT_INTERVAL_MS = 110
 # instead of jumping. Each chunk uses its own seed offset, so the draws are
 # genuinely new samples and the whole run stays reproducible from one seed.
 CAMPAIGN_CHUNKS = 10
+# Cross-entropy search settings. Measured at ~0.13 s for these numbers,
+# so it runs on demand rather than being pre-baked.
+CEM_BATCH = 400
+CEM_ITERS = 5
 
 
 def build_provider(name: Optional[str] = None) -> WorldModelProvider:
@@ -233,6 +239,8 @@ class Demo:
     bandit: Optional[OnlineBandit] = None
     archetype: str = ""          # empty = show the proposal estimate
     sample_ms: float = 0.0
+    cem: Optional[Dict[str, Any]] = None
+    cem_prior: Any = None        # the adversarial prior CEM converged on
 
     def move_item(self, name: str, x: float, y: float) -> bool:
         """Move one object in the base scene graph. Frozen dataclasses, so rebuild."""
@@ -326,6 +334,46 @@ class Demo:
     def reset_scene(self) -> None:
         self.set_scene(DEMO_ROOM)
 
+    def run_cem(self) -> Dict[str, Any]:
+        """Cross-entropy search for rare-but-plausible failures. Blocking.
+
+        Plausibility is anchored to `typical_flat`: the engine penalises severity
+        by lam * -log p(theta) under that prior, so the search is pushed towards
+        failures that could actually happen rather than absurd configurations.
+        """
+        t0 = time.perf_counter()
+        res = cem_search(
+            self.scene, DEFENSIVE, self.strategy,
+            batch=CEM_BATCH, iters=CEM_ITERS, seed=self.seed,
+            plausibility=ARCHETYPES["typical_flat"],
+        )
+        self.cem_prior = res.final_proposal
+        q = res.final_proposal
+        self.cem = {
+            "iterations": [round(v, 4) for v in res.iterations],
+            "batch": CEM_BATCH,
+            "iters": CEM_ITERS,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 1),
+            "worst": [round(sev, 3) for sev, _ in res.worst],
+            "final_proposal": {
+                "name": q.name,
+                "move_sigma": round(q.move_sigma, 4),
+                "remove_p": round(q.remove_p, 4),
+                "light_mean": round(q.light_mean, 4),
+                "light_sigma": round(q.light_sigma, 4),
+                "clutter_lambda": round(q.clutter_lambda, 4),
+            },
+            "start_proposal": {
+                "name": DEFENSIVE.name,
+                "move_sigma": round(DEFENSIVE.move_sigma, 4),
+                "remove_p": round(DEFENSIVE.remove_p, 4),
+                "light_mean": round(DEFENSIVE.light_mean, 4),
+                "light_sigma": round(DEFENSIVE.light_sigma, 4),
+                "clutter_lambda": round(DEFENSIVE.clutter_lambda, 4),
+            },
+        }
+        return self.cem
+
     def ensure_bandit(self) -> OnlineBandit:
         if self.bandit is None:
             self.bandit = OnlineBandit(self.scene, default_proposal(), seed=self.seed)
@@ -379,6 +427,7 @@ class Demo:
             "ess_min": engine.ESS_MIN,
             "bandit": self.ensure_bandit().snapshot(),
             "archetype": self.archetype,
+            "cem": self.cem,
         }
 
 
@@ -583,7 +632,13 @@ class Loop:
         if camp is None:
             await self.send({"type": "toast", "text": "run a campaign first"})
             return
-        prior = ARCHETYPES.get(name)
+        if name == "__cem__":
+            prior = self.d.cem_prior
+            if prior is None:
+                await self.send({"type": "toast", "text": "run the adversarial search first"})
+                return
+        else:
+            prior = ARCHETYPES.get(name)
         if prior is None:
             return
         self.d.archetype = name
@@ -627,6 +682,10 @@ class Loop:
                                           bool(msg.get("rerun", True)))
         elif t == "rescore":
             await self.rescore(msg.get("archetype", ""))
+        elif t == "run_cem":
+            await self.send({"type": "cem_start"})
+            cem = await asyncio.to_thread(self.d.run_cem)
+            await self.send({"type": "cem_done", "cem": cem})
         elif t == "bandit_pause":
             self.bandit_on = False
         elif t == "bandit_resume":

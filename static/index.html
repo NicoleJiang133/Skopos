@@ -75,7 +75,7 @@
   input[type=number]{font:11px var(--mono);padding:5px 6px;border-radius:5px;width:86px;
         background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
 
-  .strip{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) 240px;
+  .strip{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 232px;
          gap:10px;padding:0 10px 10px;height:clamp(158px,21vh,196px)}
   #spark{width:100%;height:66px;display:block}
   .bignum{font:700 38px/1 var(--mono);letter-spacing:-.02em}
@@ -302,6 +302,17 @@
   </div>
 
   <div class="panel">
+    <h2>adversarial search <span class="sub">&mdash; cross-entropy method</span></h2>
+    <div class="body" style="padding:8px 12px 10px">
+      <canvas id="cem" width="600" height="66"></canvas>
+      <div class="btnrow" style="margin-top:5px">
+        <button id="btn-cem">Run search</button>
+        <span class="note" id="cem-note">refits the sampler to its own worst outcomes</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>readiness</h2>
     <div class="body" style="text-align:center;padding:8px 10px">
       <div class="bignum" id="r-score">&mdash;</div>
@@ -318,7 +329,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-let ws = null, state = null, busy = false, lastReport = null;
+let ws = null, state = null, busy = false, lastReport = null, lastCem = null;
 
 function toast(t){
   const el = $("toast"); el.textContent = t; el.classList.add("on");
@@ -349,6 +360,8 @@ function handle(m){
     case "rescored": onRescored(m); break;
     case "campaign_progress": onProgress(m); break;
     case "scene_changed": onSceneChanged(m); break;
+    case "cem_start": $("cem-note").textContent = "searching\u2026"; break;
+    case "cem_done": onCem(m.cem); break;
     case "toast": toast(m.text); break;
   }
 }
@@ -382,6 +395,7 @@ function renderState(s){
   sel.value = s.strategy;
 
   if(s.privacy) drawPrivacy(s.privacy);
+  if(s.cem) onCem(s.cem);
   if(s.scene){
     $("payload").textContent = JSON.stringify(s.scene, null, 2);
     syncItemControls(s.scene);
@@ -399,7 +413,8 @@ function renderState(s){
       asel.appendChild(o);
     });
   }
-  asel.value = s.archetype || "";
+  if(Array.prototype.some.call(asel.options, o => o.value === (s.archetype || "")))
+    asel.value = s.archetype || "";
   if(s.report) drawReport(s.report);
   drawSpark(s.history || []);
   $("m-runs").textContent = (s.history || []).length;
@@ -436,6 +451,12 @@ function onCampaign(m){
   drawPrivacy(m.privacy);
 }
 
+function archetypeLabel(name){
+  if(!name) return "under the proposal";
+  if(name === "__cem__") return "under the adversarial (CEM) prior";
+  return "as a " + name.replace(/_/g, " ");
+}
+
 function setHeadline(score, state, caption){
   // Constraint 5: an importance-weighted estimate with too small an effective
   // sample size is never shown as a number. state === null means gated.
@@ -457,7 +478,7 @@ function drawReport(r){
   const sel = $("in-archetype").value;
   if(sel){
     const row = (r.archetypes || []).find(a => a.name === sel);
-    if(row) setHeadline(row.score, row.state, "as a " + sel.replace(/_/g," "));
+    if(row) setHeadline(row.score, row.state, archetypeLabel(sel));
     else setHeadline(r.readiness.score, r.readiness.state, "under the proposal");
   } else {
     setHeadline(r.readiness.score, r.readiness.state, "under the proposal");
@@ -528,8 +549,7 @@ function drawArchetypes(r){
 
 function onRescored(m){
   const a = m.row;
-  setHeadline(a.score, a.state, m.archetype ? ("as a " + m.archetype.replace(/_/g," "))
-                                            : "under the proposal");
+  setHeadline(a.score, a.state, archetypeLabel(m.archetype));
   if(lastReport){
     const i = (lastReport.archetypes || []).findIndex(r => r.name === a.name);
     if(i >= 0) lastReport.archetypes[i] = a;
@@ -636,6 +656,56 @@ function currentMove(rerun){
           x: parseFloat($("in-x").value), y: parseFloat($("in-y").value), rerun: !!rerun};
 }
 
+function onCem(cem){
+  if(!cem) return;
+  lastCem = cem;
+  drawCem(cem);
+  requestAnimationFrame(() => drawCem(cem));   // after layout, so nothing clips
+  const f = cem.final_proposal, a = cem.start_proposal;
+  $("cem-note").innerHTML =
+    cem.iters + " iterations x " + cem.batch + " samples in " + cem.elapsed_ms.toFixed(0) + " ms."
+    + "<br>failure rate " + (100*cem.iterations[0]).toFixed(0) + "% \u2192 "
+    + (100*cem.iterations[cem.iterations.length-1]).toFixed(0) + "%."
+    + "<br>it found the dark room: mean lighting " + a.light_mean.toFixed(2)
+    + " \u2192 <b>" + f.light_mean.toFixed(2) + "</b>."
+    + "<br>severity is penalised by implausibility, so these are failures that could"
+    + " actually happen.";
+  // The converged proposal is far from the mixture, so re-scoring onto it is
+  // exactly where the effective sample size collapses and reliable() bites.
+  const sel = $("in-archetype");
+  if(!Array.prototype.some.call(sel.options, o => o.value === "__cem__")){
+    const o = document.createElement("option");
+    o.value = "__cem__"; o.textContent = "adversarial (CEM)";
+    sel.appendChild(o);
+  }
+}
+
+function drawCem(cem){
+  const c = $("cem"), ctx = c.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.width = c.clientWidth * dpr;
+  const h = c.height = 66 * dpr;
+  ctx.clearRect(0,0,w,h);
+  [0,0.5,1].forEach(v => {
+    const y = h - v*(h-12) - 6;
+    ctx.strokeStyle = "#222a35"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+  });
+  const vals = cem.iterations || [];
+  if(vals.length < 2) return;
+  const xAt = (i) => 10*dpr + i/(vals.length-1)*(w - 24*dpr);
+  const yAt = (v) => h - v*(h-12) - 6;
+  ctx.lineWidth = 2*dpr; ctx.strokeStyle = "#e0574a";
+  ctx.beginPath();
+  vals.forEach((v,i) => i ? ctx.lineTo(xAt(i), yAt(v)) : ctx.moveTo(xAt(i), yAt(v)));
+  ctx.stroke();
+  ctx.fillStyle = "#e0574a";
+  vals.forEach((v,i) => { ctx.beginPath(); ctx.arc(xAt(i), yAt(v), 3*dpr, 0, 7); ctx.fill(); });
+  ctx.font = (10*dpr) + "px ui-monospace,monospace";
+  ctx.fillStyle = "#8b95a5";
+  ctx.fillText("failure rate per iteration", 14*dpr, 12*dpr);
+}
+
 // canvas sparkline, no chart library
 function drawSpark(vals){
   const c = $("spark"), ctx = c.getContext("2d");
@@ -694,6 +764,7 @@ $("in-item").addEventListener("change", () => {
   $(id).addEventListener("change", () => send(currentMove(true)));
 });
 $("btn-clear").onclick = () => send({type:"clear_hazard"});
+$("btn-cem").onclick = () => send({type:"run_cem"});
 $("btn-reset-room").onclick = () => send({type:"reset_scene", rerun:true});
 
 $("in-archetype").addEventListener("change", (e) => {
@@ -708,7 +779,10 @@ $("in-archetype").addEventListener("change", (e) => {
   send({type:"rescore", archetype:name});
 });
 
-window.addEventListener("resize", () => { if(state) drawSpark(state.history || []); });
+window.addEventListener("resize", () => {
+  if(state) drawSpark(state.history || []);
+  if(lastCem) drawCem(lastCem);
+});
 
 connect();
 </script>
