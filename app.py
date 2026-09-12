@@ -508,10 +508,14 @@ class Loop:
         self.bandit_task: Optional[asyncio.Task] = None
         self.rendering = False
         self.elite_task: Optional[asyncio.Task] = None
+        self.recorder: Optional[Recorder] = None
+        self.replaying = False
 
-    async def send(self, msg: Dict[str, Any]) -> None:
+    async def send(self, msg: Dict[str, Any], record: bool = True) -> None:
         if self.closed:
             return
+        if self.recorder is not None and record:
+            self.recorder.event(msg)
         await self.ws.send_text(json.dumps(msg, separators=(",", ":")))
 
     async def send_state(self) -> None:
@@ -532,7 +536,7 @@ class Loop:
         ob = self.d.ensure_bandit()
         try:
             while not self.closed:
-                if self.bandit_on and not self.busy:
+                if self.bandit_on and not self.busy and not self.replaying:
                     last = None
                     for _ in range(BANDIT_TICKS_PER_FRAME):
                         last = ob.step()
@@ -697,8 +701,48 @@ class Loop:
         finally:
             self.rendering = False
 
+    async def do_replay(self, run_id: str) -> None:
+        """Play a recorded run back from disk.
+
+        Nothing here touches the engine, the provider or the network: it reads
+        events.jsonl and pushes the stored messages down the same socket. This
+        is the backup demo, and it works with the machine offline.
+        """
+        if self.replaying:
+            return
+        self.replaying = True
+        self.bandit_on = False
+        try:
+            await self.send({"type": "replay", "on": True, "run_id": run_id}, record=False)
+            prev_kind = None
+            for ev in replay_events(run_id):
+                if not self.replaying or self.closed:
+                    break
+                ev = dict(ev)
+                ev["_replay"] = True
+                await self.ws.send_text(json.dumps(ev, separators=(",", ":")))
+                kind = ev.get("type")
+                # Pace it the way it was recorded: frames dwell, everything else
+                # goes straight through.
+                if kind == "frame":
+                    await asyncio.sleep(ELITE_FRAME_MS / 1000.0)
+                elif kind == "bandit":
+                    await asyncio.sleep(BANDIT_INTERVAL_MS / 1000.0)
+                elif kind == "campaign_progress":
+                    await asyncio.sleep(0.12)
+                prev_kind = kind
+        except FileNotFoundError as exc:
+            await self.send({"type": "toast", "text": str(exc)}, record=False)
+        finally:
+            self.replaying = False
+            self.bandit_on = True
+            await self.send({"type": "replay", "on": False, "run_id": run_id}, record=False)
+
     async def handle(self, msg: Dict[str, Any]) -> None:
         t = msg.get("type")
+        if self.replaying and t not in ("replay_stop", "get_state"):
+            # During a replay the live engine is deliberately idle.
+            return
         if t == "run_campaign":
             strategy = msg.get("strategy")
             if strategy and strategy not in STRATEGIES:
@@ -732,6 +776,36 @@ class Loop:
                                           bool(msg.get("rerun", True)))
         elif t == "rescore":
             await self.rescore(msg.get("archetype", ""))
+        elif t == "record_start":
+            if self.recorder is None:
+                self.recorder = Recorder()
+                self.recorder.write_meta({
+                    "seed": self.d.seed,
+                    "samples": self.d.m,
+                    "strategy": self.d.strategy,
+                    "provider": self.d.provider.name,
+                    "elite_k": ELITE_K,
+                    "scene": scene_to_dict(self.d.scene),
+                    "archetypes": list(ARCHETYPES.keys()),
+                    "ess_min": engine.ESS_MIN,
+                })
+                await self.send({"type": "recording", "on": True,
+                                 "run_id": self.recorder.run_id}, record=False)
+        elif t == "record_stop":
+            if self.recorder is not None:
+                info = self.recorder.close(
+                    self.d.report or {},
+                    self.d.ensure_bandit().snapshot(),
+                )
+                self.recorder = None
+                await self.send({"type": "recording", "on": False, "saved": info},
+                                record=False)
+        elif t == "list_runs":
+            await self.send({"type": "runs", "runs": list_runs()}, record=False)
+        elif t == "replay":
+            asyncio.create_task(self.do_replay(str(msg.get("run_id", ""))))
+        elif t == "replay_stop":
+            self.replaying = False
         elif t == "render_elite":
             self.elite_task = asyncio.create_task(self.render_elite())
         elif t == "run_cem":

@@ -214,6 +214,8 @@
         </div>
         <div class="btnrow">
           <button id="btn-run" class="primary">Run campaign</button>
+          <button id="btn-rec">&#9679; Record</button>
+          <button id="btn-replay">&#9654; Replay</button>
           <span class="note" id="run-progress"></span>
         </div>
         <div class="note" style="margin-top:9px">
@@ -333,6 +335,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 let ws = null, state = null, busy = false, lastReport = null, lastCem = null;
+let recording = false, replaying = false;
 
 function toast(t){
   const el = $("toast"); el.textContent = t; el.classList.add("on");
@@ -367,6 +370,9 @@ function handle(m){
     case "cem_done": onCem(m.cem); break;
     case "elite_start": onEliteStart(m); break;
     case "elite_done": $("btn-elite").disabled = false; break;
+    case "recording": onRecording(m); break;
+    case "replay": onReplay(m); break;
+    case "runs": pickRun(m.runs); break;
     case "toast": toast(m.text); break;
   }
 }
@@ -563,6 +569,34 @@ function onRescored(m){
   toast("re-weighted onto " + m.archetype.replace(/_/g," ") + " in "
         + a.rescore_ms.toFixed(0) + " ms \u2014 " + a.samples_reused.toLocaleString()
         + " samples reused, 0 new generations");
+}
+
+function onRecording(m){
+  recording = m.on;
+  $("btn-rec").innerHTML = m.on ? "&#9632; Stop" : "&#9679; Record";
+  $("btn-rec").className = m.on ? "danger" : "";
+  if(m.saved) toast("saved " + m.saved.run_id + " \u2014 " + m.saved.events
+                    + " events, " + m.saved.seconds + "s");
+  else if(m.on) toast("recording " + m.run_id);
+}
+
+function onReplay(m){
+  replaying = m.on;
+  $("btn-replay").innerHTML = m.on ? "&#9632; Stop replay" : "&#9654; Replay";
+  $("b-conn").textContent = m.on ? "REPLAY \u00b7 offline" : "connected";
+  $("b-conn").className = m.on ? "badge rec" : "badge live";
+  [ "btn-run","btn-clear","btn-reset-room","btn-cem","btn-elite","btn-rec" ]
+    .forEach(id => { const b = $(id); if(b) b.disabled = m.on; });
+}
+
+function pickRun(runs){
+  if(!runs.length){ toast("no recorded runs yet \u2014 hit Record first"); return; }
+  const lines = runs.slice(0, 10).map((r, i) =>
+    i + ": " + r.run_id + "  (" + r.events + " events, seed " + r.seed + ")");
+  const pick = prompt("Replay which run?\n\n" + lines.join("\n"), "0");
+  if(pick === null) return;
+  const r = runs[parseInt(pick, 10)];
+  if(r) send({type:"replay", run_id:r.run_id});
 }
 
 function onEliteStart(m){
@@ -779,6 +813,11 @@ $("in-item").addEventListener("change", () => {
 $("btn-clear").onclick = () => send({type:"clear_hazard"});
 $("btn-cem").onclick = () => send({type:"run_cem"});
 $("btn-elite").onclick = () => send({type:"render_elite"});
+$("btn-rec").onclick = () => send({type: recording ? "record_stop" : "record_start"});
+$("btn-replay").onclick = () => {
+  if(replaying){ send({type:"replay_stop"}); return; }
+  send({type:"list_runs"});
+};
 $("btn-reset-room").onclick = () => send({type:"reset_scene", rerun:true});
 
 $("in-archetype").addEventListener("change", (e) => {
