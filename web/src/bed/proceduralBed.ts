@@ -52,7 +52,9 @@ export function startProceduralBed(canvas: HTMLCanvasElement, getParams: () => B
             ? 0.65
             : state === 'enter'
               ? 0.9
-              : 0.45
+              : state === 'move'
+                ? 0.6
+                : 0.45
     const accent = state === 'alert' ? 35 : state === 'done' || state === 'replanning' ? 95 : hue
 
     const sky = ctx.createLinearGradient(0, 0, 0, h)

@@ -19,11 +19,18 @@ export function Setup() {
     >
       <div style={{ display: 'grid', gap: 16 }}>
         <InventoryTray />
-        <CTA onClick={() => goto('live')}>Go live</CTA>
+        <CTA onClick={() => goto('live')}>Play as the robot</CTA>
       </div>
       <div style={{ display: 'grid', justifyItems: 'center', gap: 12 }}>
-        <div style={{ font: '11px var(--sk-font-mono)', color: 'var(--sk-text-dim)', letterSpacing: 1 }}>
-          {grid.name.toUpperCase()} — {grid.width}×{grid.height} CELLS · {grid.objects.length} OBJECTS
+        <div
+          style={{
+            font: '11px var(--sk-font-mono)',
+            color: 'var(--sk-text-dim)',
+            letterSpacing: 1,
+          }}
+        >
+          {grid.name.toUpperCase()} — {grid.width}×{grid.height} CELLS · {grid.objects.length}{' '}
+          OBJECTS
         </div>
         <GridView cell={34} editable showRoute={false} />
       </div>

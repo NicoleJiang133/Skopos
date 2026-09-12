@@ -1,4 +1,4 @@
-export type BedState = 'idle' | 'enter' | 'drag' | 'replanning' | 'done' | 'alert'
+export type BedState = 'idle' | 'enter' | 'move' | 'drag' | 'replanning' | 'done' | 'alert'
 
 export interface PromptProgram {
   /** image anchor used with set_image so composition never drifts */

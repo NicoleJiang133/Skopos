@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { Cell } from '../planner/astar'
 import { useStore } from '../state/store'
 import type { ObjectType, VenueObject } from '../state/schema'
 
@@ -16,13 +17,24 @@ interface Props {
   editable?: boolean
   showRoute?: boolean
   showLabels?: boolean
+  trail?: Cell[]
+  heading?: number
 }
 
 /** Isometric-feeling holographic floor. Shared by the setup editor and the live minimap. */
-export function GridView({ cell, editable = false, showRoute = true, showLabels = true }: Props) {
+export function GridView({
+  cell,
+  editable = false,
+  showRoute = true,
+  showLabels = true,
+  trail: trailProp,
+  heading: headingProp,
+}: Props) {
   const grid = useStore((s) => s.grid)
   const route = useStore((s) => s.route)
   const robot = useStore((s) => s.robot)
+  const storedTrail = useStore((s) => s.trail)
+  const storedHeading = useStore((s) => s.heading)
   const replanning = useStore((s) => s.replanning)
   const moveObject = useStore((s) => s.moveObject)
   const addObject = useStore((s) => s.addObject)
@@ -32,6 +44,8 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
 
   const W = grid.width * cell
   const H = grid.height * cell
+  const trail = trailProp ?? storedTrail
+  const heading = headingProp ?? storedHeading
 
   const cellFromEvent = (e: { clientX: number; clientY: number }) => {
     const rect = ref.current!.getBoundingClientRect()
@@ -135,7 +149,21 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeDasharray="10 10"
-            style={{ animation: 'sk-dash 1.2s linear infinite', filter: 'drop-shadow(0 0 6px var(--sk-teal))' }}
+            style={{
+              animation: 'sk-dash 1.2s linear infinite',
+              filter: 'drop-shadow(0 0 6px var(--sk-teal))',
+            }}
+          />
+        )}
+
+        {trail.length > 1 && (
+          <polyline
+            points={trail.map((c) => `${c.x * cell + cell / 2},${c.y * cell + cell / 2}`).join(' ')}
+            fill="none"
+            stroke="var(--sk-amber)"
+            strokeWidth={Math.max(1, cell / 10)}
+            strokeDasharray="2 2"
+            opacity={0.6}
           />
         )}
 
@@ -153,7 +181,15 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
             r={Math.max(5, cell * 0.32)}
             fill="none"
             stroke="var(--sk-cyan)"
-            style={{ animation: 'sk-pulse-ring 2s var(--sk-ease) infinite', transformOrigin: `${robot.x * cell + cell / 2}px ${robot.y * cell + cell / 2}px` }}
+            style={{
+              animation: 'sk-pulse-ring 2s var(--sk-ease) infinite',
+              transformOrigin: `${robot.x * cell + cell / 2}px ${robot.y * cell + cell / 2}px`,
+            }}
+          />
+          <polygon
+            points={`${robot.x * cell + cell / 2},${robot.y * cell + cell * 0.14} ${robot.x * cell + cell * 0.3},${robot.y * cell + cell * 0.78} ${robot.x * cell + cell * 0.7},${robot.y * cell + cell * 0.78}`}
+            fill="var(--sk-text)"
+            transform={`rotate(${heading * 90} ${robot.x * cell + cell / 2} ${robot.y * cell + cell / 2})`}
           />
         </g>
       </svg>
@@ -182,7 +218,9 @@ export function GridView({ cell, editable = false, showRoute = true, showLabels 
               font: `${Math.max(8, cell * 0.28)}px var(--sk-font-mono)`,
               color: TYPE_COLOR[o.type],
               opacity: ghost && ghost.o.id === o.id ? 0.75 : 1,
-              transition: dragging ? 'none' : 'left var(--sk-dur-med) var(--sk-ease), top var(--sk-dur-med) var(--sk-ease)',
+              transition: dragging
+                ? 'none'
+                : 'left var(--sk-dur-med) var(--sk-ease), top var(--sk-dur-med) var(--sk-ease)',
               userSelect: 'none',
             }}
           >

@@ -69,6 +69,17 @@ export function Landing() {
         >
           Upload a photo of your venue
         </button>
+        <div
+          style={{
+            marginTop: 10,
+            font: '11px var(--sk-font-mono)',
+            color: 'var(--sk-text-dim)',
+          }}
+        >
+          {venuePhoto
+            ? 'Step 2 — enter and play as the robot.'
+            : 'Step 1 — upload a photo of your physical venue. We build your world from it.'}
+        </div>
         {photoUrl && (
           <div style={{ marginTop: 14 }}>
             <img
@@ -88,7 +99,7 @@ export function Landing() {
           </div>
         )}
         <div style={{ marginTop: 24 }}>
-          <CTA onClick={() => goto('setup')}>
+          <CTA disabled={!venuePhoto} onClick={() => goto('setup')}>
             {venuePhoto ? 'Enter your venue' : 'Set up this venue'}
           </CTA>
         </div>

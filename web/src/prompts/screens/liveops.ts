@@ -1,16 +1,18 @@
 import { composeWithBible } from '../styleBible'
 import type { BedState, PromptProgram } from '../types'
 
+/** Live Ops is first-person: the viewer IS the serving robot rolling through the venue. */
 const states: Record<BedState, string> = {
-  idle: 'Low third-person view standing at the edge of a sunlit garden venue: wooden tables and chairs on grass and flagstones, a small serving robot resting by a stone bar, olive trees and a valley view beyond, golden hour.',
+  idle: 'First-person view from a small serving robot at knee height, standing still inside this venue: table legs and chair seats at eye level, warm sunlight on the floor, a calm room, very slow subtle sway.',
   enter:
-    'The camera glides slowly into the garden venue as evening sunlight warms the tables and grass.',
-  drag: 'A table in the garden is being carried to a new spot, its long shadow sliding across the grass, dust catching the low sun.',
+    'First-person view from a small serving robot at knee height, the venue opening up ahead as the robot powers on, warm light settling over the floor.',
+  move: 'First-person view from a small serving robot at knee height rolling smoothly forward through this venue, floor gliding underneath, table legs passing on both sides, steady handheld-free motion.',
+  drag: 'First-person view from a small serving robot at knee height: a table nearby is being shifted, its shadow sliding across the floor, dust in the warm light.',
   replanning:
-    'The small robot pauses and turns, then rolls smoothly along a new winding path between the tables on the grass.',
-  done: 'The robot arrives at a table and settles, the garden calm in warm evening light.',
+    'First-person view from a small serving robot at knee height, pausing and slowly turning to look for a new way between the tables.',
+  done: 'First-person view from a small serving robot at knee height arriving beside a table and gently coming to rest, warm evening light.',
   alert:
-    'The sky turns overcast and warm lanterns switch on across the garden tables.',
+    'First-person view from a small serving robot at knee height as the room dims and warm lanterns switch on over the tables.',
 }
 
 export const liveOpsProgram: PromptProgram = {

@@ -59,7 +59,9 @@ export function startPhotoBed(
             ? 0.65
             : state === 'enter'
               ? 0.9
-              : 0.45
+              : state === 'move'
+                ? 0.6
+                : 0.45
 
     const imageWidth = image.naturalWidth || image.width
     const imageHeight = image.naturalHeight || image.height

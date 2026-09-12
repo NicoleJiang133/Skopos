@@ -30,15 +30,18 @@ export function CTA({
   children,
   onClick,
   tone = 'cyan',
+  disabled = false,
 }: {
   children: ReactNode
   onClick: () => void
   tone?: 'cyan' | 'amber'
+  disabled?: boolean
 }) {
   const color = tone === 'cyan' ? 'var(--sk-cyan)' : 'var(--sk-amber)'
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         appearance: 'none',
         border: `1px solid ${color}`,
@@ -48,7 +51,9 @@ export function CTA({
         padding: '12px 22px',
         font: '14px var(--sk-font-display)',
         letterSpacing: 0.5,
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        pointerEvents: disabled ? 'none' : undefined,
         boxShadow: tone === 'cyan' ? 'var(--sk-glow-cyan)' : 'var(--sk-glow-amber)',
         transition: 'transform var(--sk-dur-fast) var(--sk-ease)',
       }}

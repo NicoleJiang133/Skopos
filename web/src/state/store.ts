@@ -22,7 +22,7 @@ export interface EventEntry {
 export interface Interaction {
   at: number
   screen: ScreenId
-  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo'
+  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo' | 'drive'
   detail: Record<string, string | number>
 }
 
@@ -34,6 +34,8 @@ interface State {
   venuePhoto: Blob | null
   grid: VenueGrid
   robot: Cell
+  heading: 0 | 1 | 2 | 3
+  trail: Cell[]
   jobs: Job[]
   activeJobId: string
   route: Cell[]
@@ -53,12 +55,14 @@ interface State {
   moveObject: (id: string, x: number, y: number) => void
   removeObject: (id: string) => void
   selectJob: (id: string) => void
+  arrive: () => void
+  driveRobot: (action: 'forward' | 'left' | 'right') => void
   replan: () => void
-  tickRobot: () => void
   pushEvent: (text: string, tone?: EventEntry['tone']) => void
 }
 
 let seq = 0
+let moveTimer: number | undefined
 const nextId = (p: string) => `${p}-${++seq}`
 
 function occupied(grid: VenueGrid, ignoreId?: string) {
@@ -116,6 +120,8 @@ export const useStore = create<State>((set, get) => ({
   venuePhoto: null,
   grid: initialGrid,
   robot: initialRobot,
+  heading: 0,
+  trail: [initialRobot],
   jobs: initialJobs,
   activeJobId: initialJobs[0].id,
   route: planRoute(initialGrid, initialRobot, initialJobs[0].target),
@@ -127,7 +133,8 @@ export const useStore = create<State>((set, get) => ({
   interactions: [],
 
   goto: (screen) => {
-    set({ screen, bedState: 'enter' })
+    if (screen === 'live') set({ screen, bedState: 'enter', trail: [get().robot] })
+    else set({ screen, bedState: 'enter' })
     get().logInteraction('goto', { to: screen })
     window.setTimeout(() => set({ bedState: 'idle' }), 1800)
   },
@@ -233,6 +240,81 @@ export const useStore = create<State>((set, get) => ({
     get().replan()
   },
 
+  arrive: () => {
+    const s = get()
+    const job = s.jobs.find((j) => j.id === s.activeJobId)
+    if (!job || job.status === 'done') return
+    set((st) => ({
+      jobs: st.jobs.map((j) => (j.id === job.id ? { ...j, status: 'done' } : j)),
+    }))
+    get().pushEvent(`${job.label} — completed`, 'info')
+    window.setTimeout(() => {
+      const st = get()
+      const nextJob = st.jobs.find((j) => j.status === 'queued')
+      if (nextJob) return st.selectJob(nextJob.id)
+      set({ jobs: st.jobs.map((j) => ({ ...j, status: 'queued' })) })
+      st.pushEvent('Task cycle complete — requeueing', 'info')
+      st.selectJob(st.jobs[0].id)
+    }, 1400)
+  },
+
+  driveRobot: (action) => {
+    const s = get()
+    if (moveTimer) window.clearTimeout(moveTimer)
+
+    if (action === 'left' || action === 'right') {
+      const heading = ((s.heading + (action === 'left' ? 3 : 1)) % 4) as 0 | 1 | 2 | 3
+      set({ heading })
+      get().logInteraction('drive', { action, heading })
+      get().nudgeBed(`the view turns ${action === 'left' ? 'left' : 'right'} smoothly`, 'move')
+      moveTimer = window.setTimeout(() => set({ bedState: 'idle' }), 1200)
+      return
+    }
+
+    const directions: Cell[] = [
+      { x: 0, y: -1 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: -1, y: 0 },
+    ]
+    const direction = directions[s.heading]
+    const next = { x: s.robot.x + direction.x, y: s.robot.y + direction.y }
+    const blocked =
+      next.x < 0 ||
+      next.y < 0 ||
+      next.x >= s.grid.width ||
+      next.y >= s.grid.height ||
+      occupied(s.grid).has(`${next.x},${next.y}`)
+
+    if (blocked) {
+      get().pushEvent('Blocked — something is in the way', 'info')
+      set({ bedState: 'alert' })
+      get().logInteraction('drive', { action, blocked: 1 })
+      moveTimer = window.setTimeout(() => set({ bedState: 'idle' }), 900)
+      return
+    }
+
+    const job = s.jobs.find((j) => j.id === s.activeJobId)
+    const onRoute = s.route.some((c) => c.x === next.x && c.y === next.y) ? 1 : 0
+    const route = job ? planRoute(s.grid, next, job.target) : []
+    set({
+      robot: next,
+      trail: [...s.trail, next],
+      route,
+      routeProgress: 0,
+      bedState: 'move',
+    })
+    get().logInteraction('drive', {
+      action,
+      x: next.x,
+      y: next.y,
+      heading: s.heading,
+      onRoute,
+    })
+    moveTimer = window.setTimeout(() => set({ bedState: 'idle' }), 1200)
+    if (job && next.x === job.target.x && next.y === job.target.y) get().arrive()
+  },
+
   replan: () => {
     const s = get()
     const job = s.jobs.find((j) => j.id === s.activeJobId)
@@ -244,36 +326,12 @@ export const useStore = create<State>((set, get) => ({
       set({ route, routeProgress: 0, replanning: false, bedState: 'done' })
       cur.pushEvent(
         route.length > 0
-          ? `Route replanned — ${route.length} cells to ${job.label}`
+          ? `Suggested route — ${route.length} cells to ${job.label}`
           : `No route to ${job.label} — floor blocked`,
         'plan',
       )
       window.setTimeout(() => set({ bedState: 'idle', bedNudge: null }), 2200)
     }, 650)
-  },
-
-  tickRobot: () => {
-    const s = get()
-    if (s.replanning || s.route.length < 2) return
-    const next = Math.min(s.routeProgress + 1, s.route.length - 1)
-    set({ routeProgress: next, robot: s.route[next] })
-    if (next === s.route.length - 1) {
-      const job = s.jobs.find((j) => j.id === s.activeJobId)
-      if (job && job.status !== 'done') {
-        set((st) => ({
-          jobs: st.jobs.map((j) => (j.id === job.id ? { ...j, status: 'done' } : j)),
-        }))
-        get().pushEvent(`${job.label} — completed`, 'info')
-        window.setTimeout(() => {
-          const st = get()
-          const nextJob = st.jobs.find((j) => j.status === 'queued')
-          if (nextJob) return st.selectJob(nextJob.id)
-          set({ jobs: st.jobs.map((j) => ({ ...j, status: 'queued' })) })
-          st.pushEvent('Task cycle complete — requeueing', 'info')
-          st.selectJob(st.jobs[0].id)
-        }, 1400)
-      }
-    }
   },
 
   pushEvent: (text, tone = 'info') =>
