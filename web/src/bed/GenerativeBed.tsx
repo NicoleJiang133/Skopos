@@ -33,7 +33,7 @@ export function GenerativeBed() {
   const [lastPrompt, setLastPrompt] = useState('')
 
   const program = programs[screen]
-  const photoWorld = screen === 'landing' ? null : venuePhoto
+  const photoWorld = venuePhoto
 
   // procedural bed always runs underneath as the zero-dependency fallback
   useEffect(() => {
@@ -132,7 +132,7 @@ export function GenerativeBed() {
           })
           const s = useStore.getState()
           const prog = programs[s.screen]
-          const photo = s.screen === 'landing' ? null : s.venuePhoto
+          const photo = s.venuePhoto
           if (photo) await handle.prime(photo)
           handle.setPrompt(
             photo ? composePhotoPrompt(s.screen, s.bedState) : prog.composePrompt(s.bedState),
