@@ -27,6 +27,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+PRIOR_RESET_NOTE = ("prior changed \u2014 measurements reset "
+                    "(old samples were weighted against the old prior)")
+
 
 def build_provider(name: Optional[str] = None) -> WorldModelProvider:
     name = (name or os.getenv("SKOPOS_PROVIDER", "mock")).lower()
@@ -164,10 +167,12 @@ class Loop:
         elif t == "resume":
             self.running = True
         elif t == "set_rates":
-            s.set_rates(msg.get("rates", {}))
+            if s.set_rates(msg.get("rates", {})):
+                await self.send({"type": "toast", "text": PRIOR_RESET_NOTE})
             await self.send_state()
         elif t == "set_tilt":
-            s.set_tilt(msg.get("tilt", 0.3))
+            if s.set_tilt(msg.get("tilt", 0.3)):
+                await self.send({"type": "toast", "text": PRIOR_RESET_NOTE})
             await self.send_state()
         elif t == "set_speed":
             s.config.frame_interval_ms = max(10, min(400, int(msg.get("ms", 70))))

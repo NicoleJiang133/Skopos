@@ -24,6 +24,12 @@ Reward (what the bandit sees), all terms in [0, 1]:
 Asking a human almost always "completes" the task but is heavily discounted, so
 it only wins where the other arms are genuinely unreliable — which is the
 behaviour we want to show on stage.
+
+DEFERRAL IS NOT SUCCESS. `request_human_assist` completes the errand but the
+robot did not do it. The bandit still earns a (discounted) reward for it —
+deferring beats breaking a mug — but the readiness score counts only
+*autonomous* success, so a room where the robot survives by constantly calling
+for help scores as NOT READY. See metrics/readiness.py.
 """
 from __future__ import annotations
 
@@ -35,6 +41,8 @@ from typing import Dict, List, Optional, Tuple
 from ..scene_graph import SceneGraph, SceneObject, context_vector
 
 TARGET_LABEL = "mug"
+# Arms that complete the errand by handing it to a person rather than doing it.
+DEFERRAL_ARMS = ("request_human_assist",)
 START_XY = (-0.5, 0.25)          # doorway, room-local metres
 MAX_SECONDS = 60.0
 
@@ -82,6 +90,15 @@ class Episode:
     context: List[float] = field(default_factory=list)
     failure_reason: Optional[str] = None
 
+    @property
+    def deferred(self) -> bool:
+        """True when the errand was completed by asking a human, not by the robot."""
+        return self.arm in DEFERRAL_ARMS
+
+    @property
+    def autonomous_success(self) -> bool:
+        return self.success and not self.deferred
+
     def to_dict(self) -> dict:
         return {
             "arm": self.arm,
@@ -91,6 +108,8 @@ class Episode:
             "hazard_hit": self.hazard_hit,
             "hazard_object": self.hazard_object,
             "p_success": round(self.p_success, 4),
+            "deferred": self.deferred,
+            "autonomous_success": self.autonomous_success,
             "failure_reason": self.failure_reason,
             "path": [[round(p[0], 3), round(p[1], 3)] for p in self.path],
         }

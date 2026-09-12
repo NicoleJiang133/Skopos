@@ -77,13 +77,40 @@ class Session:
         return self.current
 
     # --------------------------------------------------------------- controls
-    def set_rates(self, rates: Dict[str, float]) -> None:
+    def _prior_changed(self) -> None:
+        """Changing the prior invalidates every measurement taken under the old one.
+
+        This is not housekeeping, it is correctness. Each sample carries an
+        importance weight w = p(room)/q(room) computed against a *specific*
+        prior p. Move the sliders and p is a different distribution, so the old
+        weighted samples no longer estimate E_p[.] for the new p and must not be
+        pooled with the new ones. So the metrics store is rebuilt.
+
+        The bandit is deliberately NOT reset: it estimates arm value as a
+        function of the room context, which is unchanged by a change in how
+        often we draw a given kind of room.
+        """
+        self.metrics = MetricsStore(window=self.config.window)
+
+    def set_rates(self, rates: Dict[str, float]) -> bool:
+        changed = False
         for k, v in rates.items():
             if k in AXES:
-                self.prior.rates[k] = max(0.0, min(1.0, float(v)))
+                v = max(0.0, min(1.0, float(v)))
+                if abs(self.prior.rates.get(k, 0.0) - v) > 1e-9:
+                    changed = True
+                self.prior.rates[k] = v
+        if changed:
+            self._prior_changed()
+        return changed
 
-    def set_tilt(self, tilt: float) -> None:
-        self.prior.tilt = max(0.0, min(1.0, float(tilt)))
+    def set_tilt(self, tilt: float) -> bool:
+        tilt = max(0.0, min(1.0, float(tilt)))
+        changed = abs(self.prior.tilt - tilt) > 1e-9
+        self.prior.tilt = tilt
+        if changed:
+            self._prior_changed()
+        return changed
 
     # ------------------------------------------------------------- one attempt
     def step(self) -> Dict[str, Any]:
@@ -103,7 +130,7 @@ class Session:
             index=self.attempt_index, arm=ep.arm, success=ep.success, reward=ep.reward,
             seconds=ep.seconds, hazard_hit=ep.hazard_hit, hazard_object=ep.hazard_object,
             failure_reason=ep.failure_reason, weight=self.current.weight,
-            severity=self.current.severity, room=sg.room_id,
+            severity=self.current.severity, room=sg.room_id, deferred=ep.deferred,
         )
         self.metrics.add(rec)
         self.last_episode = ep

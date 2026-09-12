@@ -207,6 +207,11 @@
           <button id="btn-shift">Shift room</button>
           <button id="btn-reset">Reset</button>
         </div>
+        <div class="btnrow" style="margin-bottom:8px">
+          <button data-preset="clean">Clean room</button>
+          <button data-preset="bad">Bad day</button>
+          <button data-preset="worst">Worst case</button>
+        </div>
         <div class="btnrow">
           <button id="btn-rec">● Record run</button>
           <button id="btn-replay">▶ Replay</button>
@@ -227,13 +232,14 @@
 
 <div class="strip">
   <div class="panel">
-    <h2>rolling success <span class="sub" id="win-sub"></span></h2>
+    <h2>rolling autonomous success <span class="sub" id="win-sub"></span></h2>
     <div class="body" style="padding:8px 12px 10px">
       <canvas id="spark" width="600" height="64"></canvas>
       <div class="kv" style="margin-top:4px">
-        <span>weighted success (importance-corrected)</span><b id="m-ws">—</b>
+        <span>weighted autonomous success (IS-corrected)</span><b id="m-ws">—</b>
       </div>
       <div class="kv"><span>weighted hazard-contact rate</span><b id="m-wh">—</b></div>
+      <div class="kv"><span>deferred to a human (not success)</span><b id="m-def">—</b></div>
       <div class="kv"><span>ESS / coverage</span><b id="m-ess">—</b></div>
     </div>
   </div>
@@ -312,7 +318,8 @@ function renderState(s){
   $("b-attempt").innerHTML = "attempt <b>" + s.attempt + "</b>";
   $("privacy-line").textContent = s.assertion;
   $("win-sub").textContent = "— last " + s.metrics.window + " attempts";
-  $("bandit-sub").textContent = "— LinUCB, alpha " + s.bandit.alpha + ", not a trained policy";
+  $("bandit-sub").textContent = "— LinUCB, alpha " + s.bandit.alpha +
+      ", not a trained policy; bars scaled across the current spread";
   if(!$("axes").dataset.built) buildAxes(s);
   drawArms(s.bandit);
   drawMetrics(s.metrics);
@@ -343,7 +350,9 @@ function buildAxes(s){
     '<span class="val" id="tilt-v">'+s.prior.tilt.toFixed(2)+'</span></div>'+
     '<input type="range" id="tilt" min="0" max="0.9" step="0.05" value="'+s.prior.tilt+'">'+
     '<div class="hint">0 = sample straight from the prior, every weight exactly 1. '+
-    'Higher oversamples rare severe rooms and corrects with w = p/q.</div>';
+    'Higher oversamples rare severe rooms and corrects with w = p/q. '+
+    'Changing any of these resets the measurements: weights are relative to a '+
+    'specific prior.</div>';
   box.appendChild(t);
   t.querySelector("input").addEventListener("input", (e) => {
     $("tilt-v").textContent = (+e.target.value).toFixed(2);
@@ -359,13 +368,20 @@ function drawArms(b){
       b.arms.find(a=>a.name===y).ucb - b.arms.find(a=>a.name===x).ucb)) !== JSON.stringify(lastArms);
   const ranked = b.arms.slice().sort((x,y)=>y.ucb-x.ucb);
   lastArms = JSON.stringify(ranked.map(a=>a.name));
-  const max = Math.max(0.001, ...b.arms.map(a=>a.ucb));
+  // Bars are scaled across the current spread, not from zero: the arms often
+  // sit within a few hundredths of each other and a zero-based bar would make
+  // four identical-looking blocks. The numeric value is printed beside each.
+  const vals = b.arms.map(a=>a.ucb);
+  const hi = Math.max(...vals), lo = Math.min(...vals);
+  const span = Math.max(hi - lo, 1e-6);
+  const pos = (v) => 12 + 88 * (v - lo) / span;   // 12%..100%
   box.innerHTML = "";
   ranked.forEach((a,i) => {
     const d = document.createElement("div");
     d.className = "arm" + (i===0 ? " sel" : "");
-    const mw = Math.max(0, Math.min(100, 100*a.mean/max));
-    const bw = Math.max(0, Math.min(100-mw, 100*a.bonus/max));
+    const total = pos(a.ucb);
+    const bw = Math.max(1.5, Math.min(total - 1, total * (a.bonus / Math.max(a.ucb, 1e-6))));
+    const mw = Math.max(0, total - bw);
     d.innerHTML =
       '<div class="top"><span class="nm">'+a.name+'</span>'+
       '<span class="num">'+a.ucb.toFixed(3)+'  n='+a.pulls+'</span></div>'+
@@ -386,6 +402,9 @@ function drawMetrics(m){
   $("r-formula").textContent = r.formula;
   $("m-ws").textContent = (100*r.terms.weighted_success).toFixed(1) + "%";
   $("m-wh").textContent = (100*r.terms.weighted_hazard_rate).toFixed(1) + "%";
+  const dr = r.terms.deferral_rate || 0;
+  $("m-def").textContent = (100*dr).toFixed(1) + "%";
+  $("m-def").style.color = dr > 0.4 ? "var(--warn)" : "var(--fg)";
   $("m-ess").textContent = r.ess.toFixed(1) + " / n=" + r.n +
       "  (coverage " + (100*r.terms.coverage_ess).toFixed(0) + "%)";
   spark(m.sparkline);
@@ -477,6 +496,30 @@ $("btn-pause").onclick = () => {
   $("btn-pause").className = paused ? "" : "primary";
 };
 $("btn-shift").onclick = () => send({type:"shift_room"});
+
+// Demo presets. Each sets every axis rate and the tilt, then draws a fresh
+// room, so a run can be moved between regimes with one click on stage.
+const PRESETS = {
+  clean: {label:"clean room", tilt:0.0, rates:{object_moved:0, object_removed:0,
+    lighting:0, occlusion:0, clutter_added:0, reflective_surface:0}},
+  bad:   {label:"bad day", tilt:0.55, rates:{object_moved:0.8, object_removed:0.3,
+    lighting:0.9, occlusion:0.8, clutter_added:0.7, reflective_surface:0.4}},
+  worst: {label:"worst case", tilt:0.9, rates:{object_moved:0.8, object_removed:1.0,
+    lighting:1.0, occlusion:1.0, clutter_added:1.0, reflective_surface:0.8}}
+};
+document.querySelectorAll("[data-preset]").forEach(btn => {
+  btn.onclick = () => {
+    const p = PRESETS[btn.dataset.preset];
+    send({type:"set_rates", rates:p.rates});
+    send({type:"set_tilt", tilt:p.tilt});
+    send({type:"shift_room"});
+    Object.entries(p.rates).forEach(([k,v]) => {
+      const el = $("ax-"+k); if(el){ el.value = v; $("axv-"+k).textContent = v.toFixed(2); }
+    });
+    const t = $("tilt"); if(t){ t.value = p.tilt; $("tilt-v").textContent = p.tilt.toFixed(2); }
+    toast(p.label + " \u2014 new room drawn; watch the bars re-order");
+  };
+});
 $("btn-reset").onclick = () => {
   const s = prompt("Reset with seed:", state ? state.seed : 20260912);
   if(s !== null) send({type:"reset", seed: parseInt(s,10)});

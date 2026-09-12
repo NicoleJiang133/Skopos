@@ -12,9 +12,23 @@ weighted blend of four things we actually measure, and nothing else:
                                     #   prior we have actually sampled (ESS-based)
               + 0.10 * T )          # timeliness: 1 - mean(time)/MAX_SECONDS
 
-S_w and H_w are self-normalised importance-weighted estimates over sampled
-perturbed rooms (see sampler/monte_carlo.py), so rare-but-severe rooms count in
-proportion to their prior probability rather than to how often we drew them.
+S_w is the importance-weighted rate of **autonomous** success: completing the
+errand by asking a human is a deferral, not a success, and earns nothing here.
+A robot that survives a bad room by calling its owner every time is safe and
+useless, and the score should say so. The deferral rate is reported separately.
+H_w is the importance-weighted hazard-contact rate. Both are self-normalised
+estimates over sampled perturbed rooms (see sampler/monte_carlo.py), so
+rare-but-severe rooms count in proportion to their prior probability rather
+than to how often we happened to draw them.
+
+Every term is computed over an **exponentially decaying window** (DECAY per
+attempt, effective memory ~(1+DECAY)/(1-DECAY) attempts), so the score tracks
+the rooms you are drawing now rather than averaging away drift. Set
+DECAY = 1.0 for a plain all-time average.
+
+Note that this store is rebuilt from scratch whenever the *prior* changes
+(see Session._prior_changed): importance weights are computed against a
+specific prior, so samples taken under a different one cannot be pooled in.
 
 C is effective sample size over sample count, ESS/n. It is a *confidence*
 discount, not an accuracy claim: a run that has only seen three rooms cannot
@@ -40,6 +54,11 @@ WEIGHTS = {"success": 0.45, "hazard": 0.25, "coverage": 0.20, "time": 0.10}
 # Effective sample size at which we consider the perturbation space "covered".
 COVERAGE_BUDGET_ESS = 15.0
 
+# Exponential forgetting factor per attempt. 0.95 -> effective memory of
+# ~39 attempts, so a room change shows up on screen within about 20 seconds
+# at the default frame rate. Set to 1.0 for a plain all-time average.
+DECAY = 0.95
+
 
 @dataclass
 class AttemptRecord:
@@ -54,6 +73,7 @@ class AttemptRecord:
     weight: float = 1.0          # importance weight of the room this ran in
     severity: float = 0.0
     room: str = "base"
+    deferred: bool = False       # completed by asking a human
 
 
 class MetricsStore:
@@ -65,30 +85,43 @@ class MetricsStore:
         # Sum of weights, for self-normalised importance sampling.
         self._w_sum = 0.0
         self._w_sq_sum = 0.0
-        self._w_success = 0.0
+        self._w_success = 0.0       # autonomous successes only
         self._w_hazard = 0.0
+        self._w_defer = 0.0
         self._t_sum = 0.0
+        self._t_n = 0.0
 
     # --------------------------------------------------------------- ingest
     def add(self, rec: AttemptRecord) -> None:
         self.attempts.append(rec)
         self.recent.append(rec)
         w = max(rec.weight, 1e-9)
-        self._w_sum += w
-        self._w_sq_sum += w * w
-        self._w_success += w * (1.0 if rec.success else 0.0)
-        self._w_hazard += w * (1.0 if rec.hazard_hit else 0.0)
-        self._t_sum += rec.seconds
+        # Decay first, then accumulate: every statistic below is an
+        # exponentially weighted, self-normalised importance-sampling estimate.
+        d, d2 = DECAY, DECAY * DECAY
+        self._w_sum = self._w_sum * d + w
+        self._w_sq_sum = self._w_sq_sum * d2 + w * w
+        autonomous = rec.success and not rec.deferred
+        self._w_success = self._w_success * d + w * (1.0 if autonomous else 0.0)
+        self._w_hazard = self._w_hazard * d + w * (1.0 if rec.hazard_hit else 0.0)
+        self._w_defer = self._w_defer * d + w * (1.0 if rec.deferred else 0.0)
+        self._t_sum = self._t_sum * d + rec.seconds
+        self._t_n = self._t_n * d + 1.0
         self.sparkline.append(self.rolling_success())
         if len(self.sparkline) > 400:
             self.sparkline = self.sparkline[-400:]
 
     # -------------------------------------------------------------- readouts
     def rolling_success(self) -> float:
-        """Unweighted success over the last `window` attempts — what the operator sees."""
+        """Unweighted AUTONOMOUS success over the last `window` attempts."""
         if not self.recent:
             return 0.0
-        return sum(1 for r in self.recent if r.success) / len(self.recent)
+        return sum(1 for r in self.recent
+                   if r.success and not r.deferred) / len(self.recent)
+
+    def deferral_rate(self) -> float:
+        """Share of attempts handed to a human instead of done by the robot."""
+        return (self._w_defer / self._w_sum) if self._w_sum else 0.0
 
     def weighted_success(self) -> float:
         return (self._w_success / self._w_sum) if self._w_sum else 0.0
@@ -107,7 +140,7 @@ class MetricsStore:
         return min(self.ess() / COVERAGE_BUDGET_ESS, 1.0)
 
     def mean_seconds(self) -> float:
-        return (self._t_sum / len(self.attempts)) if self.attempts else 0.0
+        return (self._t_sum / self._t_n) if self._t_n else 0.0
 
     def hazard_attribution(self) -> List[Dict[str, Any]]:
         """Which flagged object caused which failures, weighted by room weight."""
@@ -159,6 +192,7 @@ class MetricsStore:
             "state": state,
             "terms": {
                 "weighted_success": round(s, 4),
+                "deferral_rate": round(self.deferral_rate(), 4),
                 "weighted_hazard_rate": round(h, 4),
                 "coverage_ess": round(c, 4),
                 "timeliness": round(t, 4),
@@ -166,13 +200,16 @@ class MetricsStore:
             "weights": WEIGHTS,
             "ess": round(self.ess(), 2),
             "n": len(self.attempts),
-            "formula": ("R = 100*(0.45*S_w + 0.25*(1-H_w) + 0.20*coverage + 0.10*timeliness); "
+            "decay": DECAY,
+            "formula": ("R = 100*(0.45*S_auto + 0.25*(1-H_w) + 0.20*coverage "
+                        "+ 0.10*timeliness), decaying window; "
                         "READY>=75, MARGINAL>=50"),
         }
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "rolling_success": round(self.rolling_success(), 4),
+            "deferral_rate": round(self.deferral_rate(), 4),
             "window": self.window,
             "n": len(self.attempts),
             "readiness": self.readiness(),
