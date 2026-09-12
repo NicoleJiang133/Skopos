@@ -1,6 +1,6 @@
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://127.0.0.1:8000'
-const SCAN_BASE =
-  import.meta.env.VITE_BACKEND_SCAN_BASE ?? (import.meta.env.DEV ? '/backend' : BACKEND_URL)
+// Same-origin by default: the dev server proxies /play, /api, /static and /ws to the game backend.
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? '/play'
+const SCAN_BASE = import.meta.env.VITE_BACKEND_SCAN_BASE ?? ''
 
 export interface ScanResult {
   roomId: string
