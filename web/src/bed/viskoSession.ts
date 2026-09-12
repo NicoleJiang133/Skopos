@@ -8,8 +8,10 @@ export interface ViskoHandle {
   /** fires with main_video — immediately if the track already exists */
   onVideo: (cb: (stream: MediaStream) => void) => () => void
   setPrompt: (prompt: string) => void
-  /** anchors the first chunk; only honoured before start / after reset */
-  setImage: (url: string) => Promise<void>
+  /** reset and anchor a new venue photo before starting the next run */
+  anchor: (image: Blob, prompt: string) => Promise<void>
+  /** upload and anchor a venue photo before the first start */
+  prime: (image: Blob) => Promise<void>
   start: () => Promise<void>
   /** fires once if the session drops on its own (not via close) */
   onLost: (cb: () => void) => void
@@ -99,9 +101,16 @@ async function connectVisko(onError: (message: string) => void): Promise<ViskoHa
     setPrompt: (prompt) => {
       if (model.getStatus() === 'ready') void model.setPrompt({ prompt })
     },
-    setImage: async (url) => {
-      const blob = await (await fetch(url)).blob()
-      const ref = await model.uploadFile(blob, { name: url.split('/').pop() ?? 'anchor' })
+    anchor: async (image, prompt) => {
+      if (model.getStatus() !== 'ready') return
+      await model.reset()
+      const ref = await model.uploadFile(image, { name: 'venue-photo' })
+      await model.setImage({ image: ref })
+      await model.setPrompt({ prompt })
+      await model.start()
+    },
+    prime: async (image) => {
+      const ref = await model.uploadFile(image, { name: 'venue-photo' })
       await model.setImage({ image: ref })
     },
     start: async () => {

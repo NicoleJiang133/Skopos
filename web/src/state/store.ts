@@ -19,11 +19,19 @@ export interface EventEntry {
   tone: 'info' | 'action' | 'plan'
 }
 
+export interface Interaction {
+  at: number
+  screen: ScreenId
+  kind: 'goto' | 'place' | 'move' | 'select_job' | 'photo'
+  detail: Record<string, string | number>
+}
+
 interface State {
   screen: ScreenId
   bedState: BedState
   bedNudge: string | null
   live: boolean
+  venuePhoto: Blob | null
   grid: VenueGrid
   robot: Cell
   jobs: Job[]
@@ -32,11 +40,15 @@ interface State {
   routeProgress: number
   events: EventEntry[]
   replanning: boolean
+  interactions: Interaction[]
 
   goto: (screen: ScreenId) => void
   setBedState: (s: BedState) => void
   nudgeBed: (fragment: string, state?: BedState) => void
   setLive: (live: boolean) => void
+  setVenuePhoto: (b: Blob | null) => void
+  logInteraction: (kind: Interaction['kind'], detail: Interaction['detail']) => void
+  exportInteractions: () => void
   addObject: (type: ObjectType, x: number, y: number) => void
   moveObject: (id: string, x: number, y: number) => void
   removeObject: (id: string) => void
@@ -94,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
   bedState: 'idle',
   bedNudge: null,
   live: true,
+  venuePhoto: null,
   grid: initialGrid,
   robot: initialRobot,
   jobs: initialJobs,
@@ -104,9 +117,11 @@ export const useStore = create<State>((set, get) => ({
     { id: nextId('ev'), at: Date.now(), text: 'Venue preset loaded — WORLDS LONDON', tone: 'info' },
   ],
   replanning: false,
+  interactions: [],
 
   goto: (screen) => {
     set({ screen, bedState: 'enter' })
+    get().logInteraction('goto', { to: screen })
     window.setTimeout(() => set({ bedState: 'idle' }), 1800)
   },
 
@@ -117,6 +132,32 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setLive: (live) => set({ live }),
+
+  setVenuePhoto: (venuePhoto) => {
+    set({ venuePhoto })
+    get().logInteraction('photo', { bytes: venuePhoto?.size ?? 0 })
+  },
+
+  logInteraction: (kind, detail) => {
+    set((s) => ({
+      interactions: [...s.interactions, { at: Date.now(), screen: s.screen, kind, detail }],
+    }))
+  },
+
+  exportInteractions: () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      venue: get().grid,
+      interactions: get().interactions,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'skopos-ground-truth.json'
+    link.click()
+    URL.revokeObjectURL(url)
+  },
 
   addObject: (type, x, y) => {
     const item = INVENTORY.find((i) => i.type === type)!
@@ -132,6 +173,7 @@ export const useStore = create<State>((set, get) => ({
       label: item.label,
     }
     set((s) => ({ grid: { ...s.grid, objects: [...s.grid.objects, o] } }))
+    get().logInteraction('place', { type, x, y })
     get().pushEvent(`${item.label} placed at ${x},${y}`, 'action')
     get().nudgeBed(item.eventPrompt)
     get().replan()
@@ -151,11 +193,10 @@ export const useStore = create<State>((set, get) => ({
     set({
       grid: {
         ...s.grid,
-        objects: s.grid.objects.map((o) =>
-          o.id === id ? { ...o, x: clampedX, y: clampedY } : o,
-        ),
+        objects: s.grid.objects.map((o) => (o.id === id ? { ...o, x: clampedX, y: clampedY } : o)),
       },
     })
+    get().logInteraction('move', { id, x: clampedX, y: clampedY })
     get().pushEvent(`${target.label} moved → route replanned`, 'action')
     get().nudgeBed(target.eventPrompt)
     get().replan()
@@ -171,6 +212,7 @@ export const useStore = create<State>((set, get) => ({
       activeJobId: id,
       jobs: s.jobs.map((j) => ({ ...j, status: j.id === id ? 'active' : 'queued' })),
     }))
+    get().logInteraction('select_job', { id })
     get().replan()
   },
 

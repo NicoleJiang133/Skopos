@@ -15,12 +15,15 @@ import {
  */
 const RETRY_MS = 20_000
 const RETRY_MAX = 12
+const PHOTO_ANCHOR =
+  'Stay faithful to the provided photograph of this venue: keep its exact layout, architecture, furniture, materials and colours; only change light, weather, atmosphere and slow camera motion.'
 
 export function GenerativeBed() {
   const screen = useStore((s) => s.screen)
   const bedState = useStore((s) => s.bedState)
   const bedNudge = useStore((s) => s.bedNudge)
   const live = useStore((s) => s.live)
+  const venuePhoto = useStore((s) => s.venuePhoto)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const handleRef = useRef<ViskoHandle | null>(null)
@@ -82,7 +85,9 @@ export function GenerativeBed() {
           })
           const s = useStore.getState()
           const prog = programs[s.screen]
-          handle.setPrompt(prog.composePrompt(s.bedState))
+          const photo = s.venuePhoto
+          if (photo) await handle.prime(photo)
+          handle.setPrompt(`${prog.composePrompt(s.bedState)}${photo ? ` ${PHOTO_ANCHOR}` : ''}`)
           await handle.start()
         })
         .catch((err: unknown) => {
@@ -105,9 +110,17 @@ export function GenerativeBed() {
       setLastPrompt(prompt)
       handleRef.current?.setPrompt(prompt)
     })
-    const base = program.composePrompt(bedState)
+    const base = program.composePrompt(bedState) + (venuePhoto ? ` ${PHOTO_ANCHOR}` : '')
     send(bedNudge ? `${base} ${bedNudge}.` : base, bedState)
-  }, [program, bedState, bedNudge])
+  }, [program, bedState, bedNudge, venuePhoto])
+
+  useEffect(() => {
+    if (!handleRef.current || !venuePhoto) return
+    const base = program.composePrompt(bedState) + ` ${PHOTO_ANCHOR}`
+    const prompt = bedNudge ? `${base} ${bedNudge}.` : base
+    void handleRef.current.anchor(venuePhoto, prompt)
+    useStore.getState().pushEvent('World re-anchored to your venue photo')
+  }, [venuePhoto])
 
   return (
     <div className="sk-scanlines" style={{ position: 'fixed', inset: 0, zIndex: 0 }}>
