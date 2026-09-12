@@ -14,8 +14,6 @@ const SCREENS: Record<ScreenId, () => React.JSX.Element> = {
 export default function App() {
   const screen = useStore((s) => s.screen)
   const goto = useStore((s) => s.goto)
-  const live = useStore((s) => s.live)
-  const setLive = useStore((s) => s.setLive)
   const Screen = SCREENS[screen]
 
   return (
@@ -51,7 +49,8 @@ export default function App() {
                   font: 'inherit',
                   letterSpacing: 'inherit',
                   cursor: 'pointer',
-                  borderBottom: id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
+                  borderBottom:
+                    id === screen ? '1px solid var(--sk-cyan)' : '1px solid transparent',
                   paddingBottom: 2,
                 }}
               >
@@ -59,21 +58,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <button
-            onClick={() => setLive(!live)}
-            style={{
-              background: 'none',
-              border: `1px solid ${live ? 'var(--sk-teal)' : 'var(--sk-edge)'}`,
-              color: live ? 'var(--sk-teal)' : 'var(--sk-text-dim)',
-              borderRadius: 'var(--sk-radius-sm)',
-              padding: '4px 10px',
-              font: 'inherit',
-              letterSpacing: 1,
-              cursor: 'pointer',
-            }}
-          >
-            {live ? 'VISKO LIVE' : 'VISKO OFF'}
-          </button>
         </header>
         <main
           key={screen}

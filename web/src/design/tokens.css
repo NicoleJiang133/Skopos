@@ -20,13 +20,13 @@
   --sk-glow-cyan: 0 0 18px rgba(242, 198, 109, 0.4);
   --sk-glow-amber: 0 0 18px rgba(255, 154, 77, 0.45);
 
-  --sk-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --sk-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --sk-font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --sk-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   --sk-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --sk-dur-fast: 160ms;
   --sk-dur-med: 420ms;
-  --sk-dur-morph: 1800ms; /* matches one Visko chunk (33 frames @18fps) */
+  --sk-dur-morph: 1800ms; /* keeps screen morph pacing consistent with world updates */
 }
 
 html,
@@ -52,7 +52,7 @@ body,
 }
 
 .sk-scanlines::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;

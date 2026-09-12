@@ -37,7 +37,7 @@ export function EventFeed() {
           opacity: 0.7,
         }}
       >
-        <span>Planning is real (local A*). World view is generated.</span>
+        <span>Planning is real (local A*). The world is your venue photo.</span>
         <button
           onClick={exportInteractions}
           style={{

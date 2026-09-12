@@ -30,7 +30,6 @@ interface State {
   screen: ScreenId
   bedState: BedState
   bedNudge: string | null
-  live: boolean
   venuePhoto: Blob | null
   grid: VenueGrid
   robot: Cell
@@ -45,7 +44,6 @@ interface State {
   goto: (screen: ScreenId) => void
   setBedState: (s: BedState) => void
   nudgeBed: (fragment: string, state?: BedState) => void
-  setLive: (live: boolean) => void
   setVenuePhoto: (b: Blob | null) => void
   logInteraction: (kind: Interaction['kind'], detail: Interaction['detail']) => void
   exportInteractions: () => void
@@ -105,7 +103,6 @@ export const useStore = create<State>((set, get) => ({
   screen: 'landing',
   bedState: 'idle',
   bedNudge: null,
-  live: true,
   venuePhoto: null,
   grid: initialGrid,
   robot: initialRobot,
@@ -131,11 +128,12 @@ export const useStore = create<State>((set, get) => ({
     set({ bedNudge: fragment, bedState: state })
   },
 
-  setLive: (live) => set({ live }),
-
-  setVenuePhoto: (venuePhoto) => {
-    set({ venuePhoto })
-    get().logInteraction('photo', { bytes: venuePhoto?.size ?? 0 })
+  setVenuePhoto: (b) => {
+    set({ venuePhoto: b })
+    get().logInteraction(
+      'photo',
+      b ? { bytes: b.size, name: (b as File).name ?? 'photo', type: b.type } : { bytes: 0 },
+    )
   },
 
   logInteraction: (kind, detail) => {
