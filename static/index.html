@@ -185,7 +185,8 @@
           <div class="kv"><span>frames processed</span><b id="p-seen">0</b></div>
           <div class="kv"><span>frames discarded</span><b id="p-disc" style="color:var(--good)">0</b></div>
           <div class="kv"><span>frames written to disk</span><b id="p-ret" style="color:var(--good)">0</b></div>
-          <div class="kv"><span>pixels transmitted</span><b style="color:var(--good)">0</b></div>
+          <div class="kv"><span>pixels transmitted</span><b id="p-pixels" style="color:var(--good)">0</b></div>
+          <div class="kv"><span>reference images sent</span><b id="p-refs" style="color:var(--good)">0</b></div>
           <div class="kv"><span>payloads sent</span><b id="p-count">0</b></div>
           <div class="kv"><span>bytes sent</span><b id="p-bytes">0</b></div>
           <div class="note" style="margin-top:7px" id="p-note">
@@ -625,6 +626,20 @@ function onFrame(m){
 
 function drawPrivacy(p){
   if(!p) return;
+  // If the provider uploaded reference images, the banner must contradict
+  // itself rather than keep claiming no pixels left the device.
+  const bar = $("privacy-line");
+  if(p.pixels_uploaded){
+    bar.textContent = p.assertion;
+    bar.style.background = "#2a1f12";
+    bar.style.borderBottomColor = "#5a4020";
+    bar.style.color = "#ffcf90";
+  }
+  $("p-refs").textContent = (p.reference_images || []).length;
+  $("p-refs").style.color = p.pixels_uploaded ? "var(--warn)" : "var(--good)";
+  $("p-pixels").textContent = p.pixels_uploaded
+    ? (p.reference_images || []).length + " reference image(s)" : "0";
+  $("p-pixels").style.color = p.pixels_uploaded ? "var(--warn)" : "var(--good)";
   $("p-seen").textContent = p.frames_seen;
   $("p-disc").textContent = p.frames_discarded;
   $("p-ret").textContent = p.frames_retained;

@@ -279,6 +279,34 @@ def _t16() -> str:
     return "no src/href attributes at all; every style and script is inline"
 
 
+@check("uploading reference images forces the privacy banner to contradict itself")
+def _t_refs() -> str:
+    """The live Reactor path can upload a photo as a generation reference. That
+    is pixels leaving the device, so the headline claim must stop being made."""
+    demo = app.Demo()
+    clean = demo.privacy_state()
+    assert "no pixels" in clean["assertion"], "baseline assertion changed unexpectedly"
+    assert clean["pixels_uploaded"] is False
+    assert clean["reference_images"] == []
+
+    class _UploadingProvider:
+        name = "reactor"
+        live = True
+
+        def health(self):
+            return {"provider": "reactor", "live": True, "ok": True,
+                    "reference_images": ["room.jpg", "corner.jpg"],
+                    "pixels_uploaded": True}
+
+    demo.provider = _UploadingProvider()
+    dirty = demo.privacy_state()
+    assert dirty["pixels_uploaded"] is True
+    assert "no pixels" not in dirty["assertion"], (
+        "banner still claims no pixels left while 2 images were uploaded")
+    assert "HAVE left this device" in dirty["assertion"], dirty["assertion"]
+    return "banner flips to: " + dirty["assertion"][:64] + "..."
+
+
 @check("no placeholder metrics are unlabelled")
 def _t17() -> str:
     """Constraint 3: anything provisional must be named placeholder_."""

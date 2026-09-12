@@ -1,0 +1,5 @@
+# Extra dependencies for the LIVE Reactor provider only.
+# The default mock path needs none of these — see requirements.txt.
+reactor-sdk==1.5.1
+pillow==12.3.0
+numpy==2.5.3

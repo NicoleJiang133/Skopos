@@ -1,48 +1,59 @@
 """
 Reactor (reactor.inc) world-model provider.
 
-STATUS: adapter written against the public docs at https://docs.reactor.inc,
-read at build time (12 Sept 2026). It has NOT been executed against the live
-API — we had no key in the room. Everything below that came from the docs is
-marked [docs]; everything that is our inference is marked TODO(reactor) and must
-be checked before anyone claims this ran live.
+STATUS: written against `reactor-sdk` 1.5.1, whose real API was read directly
+off the installed package (signatures and docstrings), not guessed. What remains
+unverified is only what needs a live key and a live model: the model slug, the
+command names that model actually declares, and whether frames arrive at a
+useful rate. `scripts/reactor_probe.py` answers all three in one run — do that
+before relying on anything here.
 
-What the docs gave us [docs]:
-  - base URL                https://api.reactor.inc
-  - auth                    API key `rk_...` in REACTOR_API_KEY; the Python SDK
-                            exchanges it for a JWT internally (server-side token
-                            mint is POST https://api.reactor.inc/tokens)
-  - transport               persistent WebSocket, bidirectional, sub-second RTT
-  - python package          `pip install reactor-sdk`
-  - construction            Reactor(model_name="reactor/helios", api_key=...)
-  - commands                await reactor.send_command("set_prompt", {"prompt": ...})
-                            await reactor.send_command("start", {})
-  - frames                  a frame callback receives (H, W, 3) uint8 RGB numpy
+HOW THE SDK ACTUALLY WORKS (from reactor_sdk 1.5.1)
+---------------------------------------------------
+    reactor = Reactor(model_name="reactor/helios", api_key=...)   # or jwt=...
+    await reactor.connect()                    # WebRTC transport, status -> "ready"
 
-TODO(reactor) — fill these in against a live key before going live:
-  1. BASE URL / MODEL SLUG: confirm the model slug to use. "reactor/helios" is
-     the docs' example; do not guess an alternative.
-  2. AUTH: confirm whether passing api_key= to Reactor(...) is sufficient, or
-     whether we must mint a JWT ourselves (POST /tokens) and pass that.
-     Confirm the exact header name if we ever call the REST surface directly.
-  3. OUTPUT HANDLE: the docs show `@output.on_frame`. Confirm how `output` is
-     obtained from the Reactor object (attribute? await reactor.output()?
-     a trackReceived event carrying the "main_video" track?).
-  4. REQUEST SHAPE: confirm whether an image-conditioned or video-conditioned
-     mode exists. We currently drive it prompt-only, which is weaker than we
-     want: we have a SceneGraph, and ideally we would condition on a rendered
-     layout image rather than a text description of it.
-  5. CONTROL: confirm the command to change the prompt mid-stream without
-     tearing down the session (we assume a second "set_prompt" works), and the
-     command to stop ("stop"? "pause"?).
-  6. FRAME ENCODING: converting the numpy frame to a data URL needs Pillow,
-     which is deliberately NOT in requirements.txt. Add `pillow` when going
-     live, or switch the UI to a binary WebSocket frame channel.
+    @reactor.on_track                          # fires once per incoming track
+    def got(track):
+        if track.kind == TrackKind.VIDEO:
+            @track.on_frame                    # RGB numpy (H, W, 3)
+            def frame(frame, frame_id, timestamp_us, user_data): ...
 
-See docs/PROVIDER_SWAP.md for the ten-minute checklist.
+    schema = await reactor.request_schema()    # the model's OWN command schema
+    reply  = await reactor.send_command(name, data)
+
+    ref = await reactor.upload_file("room.jpg")          # -> FileRef, needs READY
+    await reactor.send_command("set_image", {"image": ref})
+
+Two SDK details that shape the code below:
+
+* `upload_file` raises `InvalidStateError` unless the connection is already
+  `"ready"`, so reference images are uploaded from a READY status handler, never
+  at construction time.
+* We create and own the asyncio loop the SDK runs on, so commands are scheduled
+  from the render thread with `run_coroutine_threadsafe` against *our* loop. The
+  earlier version of this file reached for a private `reactor._loop`; it does
+  not need to and no longer does.
+
+PRIVACY — READ THIS BEFORE ENABLING REFERENCE IMAGES
+-----------------------------------------------------
+Skopos's headline claim is that no pixels leave the device. Uploading a
+photograph of the real room as a generation reference **breaks that claim**: the
+photo is pixels, and it goes to Reactor.
+
+So it is opt-in and off by default. With `SKOPOS_REFERENCE_IMAGES` unset, the
+only thing that ever leaves is the scene graph, exactly as the README says. Set
+it and the app says so, loudly, in the provider badge and the privacy panel —
+because the alternative is a privacy claim on screen that is not true.
+
+If you want the visual anchoring without the privacy cost, point it at a
+*rendered* reference (the mock provider's own plan view, or any synthetic image
+derived from the scene graph) rather than a photo. Same mechanism, no real
+pixels.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -52,20 +63,42 @@ import time
 from typing import Any, Dict, List, Optional
 
 from engine import SceneGraph
+
 from .base import Frame, RenderRequest, WorldModelProvider
 from .mock import MockProvider
 
 log = logging.getLogger("skopos.reactor")
 
-DEFAULT_MODEL = os.getenv("REACTOR_MODEL", "reactor/helios")  # [docs] example slug
+DEFAULT_MODEL = os.getenv("REACTOR_MODEL", "reactor/helios")
+DEFAULT_API_URL = os.getenv("REACTOR_API_URL", "https://api.reactor.inc")
+
+# Command names. The docs and the SDK's own docstrings both use these, but the
+# authoritative answer is `request_schema()` for your model — the probe script
+# prints it, and these are overridable rather than hard-coded.
+PROMPT_COMMAND = os.getenv("REACTOR_PROMPT_COMMAND", "set_prompt")
+PROMPT_FIELD = os.getenv("REACTOR_PROMPT_FIELD", "prompt")
+START_COMMAND = os.getenv("REACTOR_START_COMMAND", "start")
+IMAGE_COMMAND = os.getenv("REACTOR_IMAGE_COMMAND", "set_image")
+IMAGE_FIELD = os.getenv("REACTOR_IMAGE_FIELD", "image")
+
+# Comma-separated paths. Off by default; see the privacy note above.
+REFERENCE_IMAGES = [
+    p.strip() for p in os.getenv("SKOPOS_REFERENCE_IMAGES", "").split(",") if p.strip()
+]
+
+# A frame older than this is treated as stale and we fall back rather than show
+# a frozen picture while claiming it is live.
+FRAME_STALE_SECONDS = float(os.getenv("REACTOR_FRAME_STALE_S", "2.0"))
+# How long render() will wait for the stream to catch up with a new prompt.
+PROMPT_SETTLE_SECONDS = float(os.getenv("REACTOR_PROMPT_SETTLE_S", "0.0"))
 
 
 def scene_to_prompt(sg: SceneGraph, req: RenderRequest) -> str:
     """Turn a scene graph into a text prompt.
 
-    This is the weakest link in the whole adapter and we say so: a text prompt
-    throws away the geometry the surrogate actually scores on. See
-    TODO(reactor) item 4 — image conditioning is the right answer.
+    Text is a lossy channel for geometry — it throws away the layout the
+    surrogate actually scores on. Reference images (or, better, an image-
+    conditioned mode if the model has one) are how you get that back.
     """
     bits: List[str] = []
     for it in sg.items:
@@ -77,24 +110,30 @@ def scene_to_prompt(sg: SceneGraph, req: RenderRequest) -> str:
         elif it.low_contrast:
             desc = "matte black " + desc
         bits.append("{} at ({:.1f}, {:.1f})".format(desc, it.x, it.y))
-    light = "dim" if sg.lighting < 0.35 else ("bright" if sg.lighting > 0.75 else "evenly lit")
-    clutter = ""
+
+    missing = [it.name.replace("_", " ") for it in sg.items if not it.present]
+    light = "dimly lit" if sg.lighting < 0.35 else (
+        "brightly lit" if sg.lighting > 0.75 else "evenly lit")
+
+    parts = [
+        "Photorealistic interior, eye-level view of a {} living room.".format(light),
+        "Objects: {}.".format("; ".join(bits) if bits else "an empty room"),
+    ]
     if sg.clutter:
-        clutter = " {} small unmodelled objects scattered on the floor.".format(sg.clutter)
-    return (
-        "Photorealistic interior, eye-level view of a {} living room. "
-        "Objects: {}.{} Camera moving slowly towards the {}."
-    ).format(light, "; ".join(bits), clutter, sg.target)
+        parts.append("{} small unmodelled objects scattered across the floor.".format(sg.clutter))
+    if missing:
+        parts.append("The {} is not present.".format(", ".join(missing)))
+    parts.append("Camera moving slowly towards the {}.".format(sg.target))
+    return " ".join(parts)
 
 
 class ReactorProvider(WorldModelProvider):
-    """Streams from Reactor when a key and SDK are present, else falls back loudly.
+    """Streams frames from Reactor, falling back to the mock renderer loudly.
 
-    Threading model: the SDK is asyncio and push-based; our interface is a
-    synchronous pull (`render`). So we run the SDK's loop on a background thread
-    and keep only the most recent frame. `render()` returns that frame. If no
-    frame has arrived yet we return the mock render rather than a blank screen,
-    tagged so the UI can say which is which.
+    Threading: the SDK is asyncio and push-based; our interface is a synchronous
+    pull (`render`). So the SDK runs on a loop we own on a background thread and
+    we keep only the most recent frame. `render()` returns that frame, or the
+    mock render tagged `live: False` if none has arrived.
     """
 
     name = "reactor"
@@ -102,28 +141,42 @@ class ReactorProvider(WorldModelProvider):
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self.model = model
         self.api_key = os.getenv("REACTOR_API_KEY", "")
+        self.api_url = DEFAULT_API_URL
         self._fallback = MockProvider()
-        self._latest: Optional[bytes] = None      # most recent PNG bytes
+
+        self._latest_png: Optional[bytes] = None
         self._latest_at: float = 0.0
+        self._frames_in = 0
         self._lock = threading.Lock()
+
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._reactor: Any = None
         self._thread: Optional[threading.Thread] = None
-        self._reactor = None
-        self._last_prompt: str = ""
+        self._last_prompt = ""
+        self._schema: Optional[Dict[str, Any]] = None
+        self._uploaded: List[str] = []
+
         self.live = False
         self.status = "not started"
+        self.reference_images = list(REFERENCE_IMAGES)
 
         if not self.api_key:
-            self.status = "no REACTOR_API_KEY — using mock frames"
-            log.warning("Reactor provider selected but REACTOR_API_KEY is unset; "
-                        "serving MOCK frames. See docs/PROVIDER_SWAP.md.")
+            self.status = "no REACTOR_API_KEY — serving mock frames"
+            log.warning("Reactor selected but REACTOR_API_KEY is unset; serving MOCK "
+                        "frames. See docs/PROVIDER_SWAP.md.")
             return
         try:
             import reactor_sdk  # noqa: F401
         except ImportError:
-            self.status = "reactor-sdk not installed — using mock frames"
-            log.warning("reactor-sdk is not installed; serving MOCK frames. "
-                        "pip install reactor-sdk")
+            self.status = "reactor-sdk not installed — serving mock frames"
+            log.warning("pip install reactor-sdk pillow numpy; serving MOCK frames.")
             return
+
+        if self.reference_images:
+            log.warning(
+                "PRIVACY: SKOPOS_REFERENCE_IMAGES is set. %d image(s) will be uploaded "
+                "to Reactor. Pixels WILL leave this device. %s",
+                len(self.reference_images), self.reference_images)
         self._start()
 
     # ------------------------------------------------------------ connection
@@ -134,114 +187,203 @@ class ReactorProvider(WorldModelProvider):
         self.status = "connecting"
 
     def _run_loop(self) -> None:
-        """Background asyncio loop owning the Reactor session. [docs]-shaped."""
-        import asyncio
-
-        async def main() -> None:
-            from reactor_sdk import Reactor  # [docs]
-
-            reactor = Reactor(model_name=self.model, api_key=self.api_key)  # [docs]
-            self._reactor = reactor
-
-            # TODO(reactor) item 3: confirm how the output handle is obtained.
-            output = getattr(reactor, "output", None)
-            if output is None:
-                raise RuntimeError(
-                    "TODO(reactor): could not find the frame output handle on the "
-                    "Reactor object. Check the SDK for how `@output.on_frame` is "
-                    "wired up (docs show the decorator but not where `output` "
-                    "comes from)."
-                )
-
-            @output.on_frame  # [docs]
-            def on_frame(frame: Any) -> None:            # (H, W, 3) uint8 RGB [docs]
-                png = self._encode_png(frame)
-                if png is not None:
-                    with self._lock:
-                        self._latest = png
-                        self._latest_at = time.time()
-                    self.live = True
-                    self.status = "streaming"
-
-            await reactor.connect()                                    # [docs]
-            await reactor.send_command("start", {})                    # [docs]
-            await asyncio.Event().wait()
-
+        """Own the loop, so commands can be scheduled onto it from render()."""
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
         try:
-            asyncio.run(main())
+            loop.run_until_complete(self._main())
         except Exception as exc:            # noqa: BLE001 — never kill the demo
             self.live = False
             self.status = "error: {}".format(exc)
             log.exception("Reactor stream failed; falling back to mock frames")
+        finally:
+            try:
+                loop.close()
+            finally:
+                self._loop = None
 
+    async def _main(self) -> None:
+        from reactor_sdk import Reactor, ReactorStatus, TrackKind
+
+        reactor = Reactor(model_name=self.model, api_key=self.api_key,
+                          api_url=self.api_url)
+        self._reactor = reactor
+
+        @reactor.on_track
+        def _on_track(track: Any) -> None:
+            # Fires once per incoming track; not filtered by name, so check.
+            if str(track.kind) != str(TrackKind.VIDEO):
+                return
+            log.info("Reactor video track: %s", track.name)
+
+            @track.on_frame
+            def _on_frame(frame: Any) -> None:      # RGB numpy (H, W, 3)
+                png = self._encode_png(frame)
+                if png is None:
+                    return
+                with self._lock:
+                    self._latest_png = png
+                    self._latest_at = time.time()
+                    self._frames_in += 1
+                if not self.live:
+                    self.live = True
+                    self.status = "streaming"
+
+        @reactor.on_status
+        def _on_status(status: Any) -> None:
+            log.info("Reactor status: %s", status)
+            if not self.live:
+                self.status = "status: {}".format(status)
+
+        @reactor.on_error
+        def _on_error(err: Any) -> None:
+            log.error("Reactor error: %s", err)
+            self.status = "error: {}".format(err)
+
+        await reactor.connect()
+        self.status = "connected"
+
+        # The model's own command schema. Logged so the real command names are
+        # visible in the run rather than assumed.
+        try:
+            self._schema = await reactor.request_schema()
+            log.info("Reactor command schema keys: %s",
+                     sorted(self._schema.get("paths", self._schema).keys())[:20])
+        except Exception as exc:            # noqa: BLE001
+            log.warning("request_schema() failed (continuing): %s", exc)
+
+        # upload_file requires READY, which connect() has now guaranteed.
+        await self._upload_references(reactor)
+
+        try:
+            await reactor.send_command(START_COMMAND, {})
+        except Exception as exc:            # noqa: BLE001
+            log.warning("%s command failed (continuing): %s", START_COMMAND, exc)
+
+        # Hold the loop open for the life of the process.
+        await asyncio.Event().wait()
+
+    async def _upload_references(self, reactor: Any) -> None:
+        """Upload the configured reference images and hand them to the model.
+
+        Opt-in: with SKOPOS_REFERENCE_IMAGES unset this does nothing and no
+        pixels leave the device.
+        """
+        if not self.reference_images:
+            return
+        refs = []
+        for path in self.reference_images:
+            if not os.path.exists(path):
+                log.error("reference image not found, skipping: %s", path)
+                continue
+            try:
+                ref = await reactor.upload_file(path)
+                refs.append(ref)
+                self._uploaded.append(os.path.basename(path))
+                log.info("uploaded reference image: %s", path)
+            except Exception as exc:        # noqa: BLE001
+                log.error("upload failed for %s: %s", path, exc)
+        if not refs:
+            return
+        # Single ref goes in the top-level slot the SDK pulls out as an upload
+        # reference; several go in a list, serialised in place.
+        data = {IMAGE_FIELD: refs[0]} if len(refs) == 1 else {IMAGE_FIELD: refs}
+        try:
+            await reactor.send_command(IMAGE_COMMAND, data)
+            log.info("sent %s with %d reference image(s)", IMAGE_COMMAND, len(refs))
+        except Exception as exc:            # noqa: BLE001
+            log.error("%s failed — check the model's schema for the right command "
+                      "and field name: %s", IMAGE_COMMAND, exc)
+
+    # ---------------------------------------------------------------- frames
     @staticmethod
     def _encode_png(frame: Any) -> Optional[bytes]:
-        """numpy (H,W,3) uint8 -> PNG bytes. Needs Pillow; see TODO(reactor) 6."""
+        """RGB numpy (H, W, 3) -> PNG bytes."""
         try:
             from PIL import Image
         except ImportError:
             log.error("Pillow is not installed; cannot encode Reactor frames. "
                       "pip install pillow")
             return None
-        buf = io.BytesIO()
-        Image.fromarray(frame).save(buf, format="PNG", optimize=False)
-        return buf.getvalue()
+        try:
+            buf = io.BytesIO()
+            Image.fromarray(frame).save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception as exc:            # noqa: BLE001
+            log.error("frame encode failed: %s", exc)
+            return None
+
+    def _send(self, command: str, data: Any) -> None:
+        """Fire a command from the render thread onto the SDK's loop."""
+        loop, reactor = self._loop, self._reactor
+        if loop is None or reactor is None or loop.is_closed():
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(reactor.send_command(command, data), loop)
+        except Exception as exc:            # noqa: BLE001
+            log.warning("%s failed: %s", command, exc)
 
     # ---------------------------------------------------------------- render
     def render(self, sg: SceneGraph, req: RenderRequest) -> Frame:
         t0 = time.perf_counter()
 
-        # Push a new prompt when the scene changes. TODO(reactor) item 5.
         prompt = scene_to_prompt(sg, req)
-        if self._reactor is not None and prompt != self._last_prompt:
+        if prompt != self._last_prompt:
             self._last_prompt = prompt
-            try:
-                import asyncio
-                asyncio.run_coroutine_threadsafe(
-                    self._reactor.send_command("set_prompt", {"prompt": prompt}),  # [docs]
-                    self._reactor_loop(),
-                )
-            except Exception as exc:        # noqa: BLE001
-                log.warning("set_prompt failed: %s", exc)
+            self._send(PROMPT_COMMAND, {PROMPT_FIELD: prompt})
+            if PROMPT_SETTLE_SECONDS > 0:
+                # Give the stream a moment to reflect the new prompt. Off by
+                # default: it trades demo pace for fidelity.
+                time.sleep(PROMPT_SETTLE_SECONDS)
 
         with self._lock:
-            png, at = self._latest, self._latest_at
+            png, at, n = self._latest_png, self._latest_at, self._frames_in
 
-        if png is not None and (time.time() - at) < 2.0:
-            b64 = base64.b64encode(png).decode("ascii")
+        age = time.time() - at if png is not None else None
+        if png is not None and age is not None and age < FRAME_STALE_SECONDS:
             return Frame(
-                data_url="data:image/png;base64," + b64,
+                data_url="data:image/png;base64," + base64.b64encode(png).decode("ascii"),
                 provider=self.name,
                 latency_ms=(time.perf_counter() - t0) * 1000.0,
                 step=req.step,
-                meta={"live": True, "model": self.model, "age_s": round(time.time() - at, 3)},
+                meta={"live": True, "model": self.model, "age_s": round(age, 3),
+                      "frames_in": n, "severity": round(req.severity, 3),
+                      "culprit": req.culprit,
+                      "reference_images": len(self._uploaded)},
             )
 
         frame = self._fallback.render(sg, req)
         frame.provider = "reactor(fallback:mock)"
         frame.meta["live"] = False
-        frame.meta["reason"] = self.status
+        frame.meta["reason"] = (
+            "no frame yet — " + self.status if png is None
+            else "last frame is {:.1f}s old — {}".format(age or 0.0, self.status))
         return frame
 
-    def _reactor_loop(self):
-        """TODO(reactor): the SDK does not document how to reach its event loop.
-
-        Returns the loop the background thread is running so we can schedule
-        commands onto it. Replace with whatever the SDK exposes.
-        """
-        import asyncio
-        loop = getattr(self._reactor, "_loop", None)
-        if loop is None:
-            raise RuntimeError("TODO(reactor): no accessible event loop on the SDK object")
-        return loop
-
     def health(self) -> Dict[str, Any]:
+        with self._lock:
+            n, at = self._frames_in, self._latest_at
         return {
             "provider": self.name,
             "live": self.live,
             "ok": True,
             "status": self.status,
             "model": self.model,
+            "api_url": self.api_url,
             "key_present": bool(self.api_key),
-            "note": "adapter written from docs, never executed against the live API",
+            "frames_in": n,
+            "last_frame_age_s": round(time.time() - at, 2) if at else None,
+            "reference_images": list(self._uploaded),
+            # Surfaced so the UI can contradict the privacy banner when it must.
+            "pixels_uploaded": bool(self._uploaded),
+            "schema_known": self._schema is not None,
         }
+
+    def close(self) -> None:
+        loop, reactor = self._loop, self._reactor
+        if loop is not None and reactor is not None and not loop.is_closed():
+            try:
+                asyncio.run_coroutine_threadsafe(reactor.disconnect(), loop).result(5)
+            except Exception:               # noqa: BLE001
+                pass

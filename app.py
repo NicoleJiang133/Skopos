@@ -414,6 +414,25 @@ class Demo:
         self.ledger.note_payload(payload)
         return payload
 
+    def privacy_state(self) -> Dict[str, Any]:
+        """Privacy counters, plus anything the provider is doing that contradicts
+        the headline claim. A reference image uploaded to a world model is
+        pixels leaving the device, and the banner has to say so."""
+        d = self.ledger.to_dict()
+        health = self.provider.health()
+        refs = health.get("reference_images") or []
+        d["reference_images"] = refs
+        d["pixels_uploaded"] = bool(health.get("pixels_uploaded"))
+        if d["pixels_uploaded"]:
+            d["assertion"] = (
+                "PRIVACY \u2014 REDUCED BY CONFIGURATION: {} reference image(s) were "
+                "uploaded to the {} provider, so pixels HAVE left this device. Scan "
+                "frames are still discarded and the per-frame stream still carries "
+                "only the scene graph.".format(
+                    len(refs), health.get("provider", "world-model"))
+            )
+        return d
+
     def state(self) -> Dict[str, Any]:
         return {
             "scene": scene_to_dict(self.scene),
@@ -425,7 +444,7 @@ class Demo:
             "elite_k": ELITE_K,
             "report": self.report,
             "history": self.history,
-            "privacy": self.ledger.to_dict(),
+            "privacy": self.privacy_state(),
             "provider": self.provider.health(),
             "assertion": startup_assertion(),
             "ess_min": engine.ESS_MIN,
@@ -445,6 +464,11 @@ async def _startup() -> None:
     # Privacy assertion, one line, at startup. See privacy.py.
     log.info(startup_assertion())
     log.info("provider=%s samples=%d seed=%d", DEMO.provider.name, DEMO.m, DEMO.seed)
+    _h = DEMO.provider.health()
+    if _h.get("pixels_uploaded"):
+        log.warning("PRIVACY: %d reference image(s) uploaded to %s — pixels HAVE "
+                    "left this device: %s", len(_h.get("reference_images") or []),
+                    _h.get("provider"), _h.get("reference_images"))
     # The scan step. Frames are counted and dropped; nothing is written to disk
     # unless SKOPOS_DEBUG_KEEP_FRAMES=1, which is off by default and shouted
     # about in startup_assertion() when it is not.
@@ -599,7 +623,7 @@ class Loop:
                 "history": d.history,
                 "scene": scene_to_dict(d.scene),
                 "scene_payload": payload,
-                "privacy": d.ledger.to_dict(),
+                "privacy": d.privacy_state(),
             })
             # The worst twelve are what a human needs to see, so play them.
             self.elite_task = asyncio.create_task(self.render_elite())
@@ -631,7 +655,7 @@ class Loop:
             "type": "scene_changed",
             "scene": scene_to_dict(self.d.scene),
             "scene_payload": payload,
-            "privacy": self.d.ledger.to_dict(),
+            "privacy": self.d.privacy_state(),
             "what": what,
         })
         await self.render_base()
