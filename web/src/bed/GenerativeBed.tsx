@@ -51,17 +51,25 @@ export function GenerativeBed() {
     let cancelled = false
     let retry: number | undefined
     const push = (t: string) => useStore.getState().pushEvent(t, 'info')
+    let fatal = false
     const connect = (attempt: number) => {
       push(attempt ? `Reconnecting to Visko (${attempt})…` : 'Connecting to Visko…')
-      openViskoSession((msg) => push(`Visko — ${msg}`))
+      openViskoSession((msg) => {
+        if (msg.includes('credits_depleted')) fatal = true
+        push(`Visko — ${msg}`)
+      })
         .then(async (handle) => {
           if (cancelled || !handle) {
             void handle?.close()
             if (!cancelled) {
               setSource('procedural')
-              push('Live bed unavailable — running fallback world')
+              push(
+                fatal
+                  ? 'Reactor credits depleted — running fallback world (top up to go live)'
+                  : 'Live bed unavailable — running fallback world',
+              )
               // a stale session (one-per-account) expires on its own; keep trying
-              if (attempt < RETRY_MAX)
+              if (!fatal && attempt < RETRY_MAX)
                 retry = window.setTimeout(() => connect(attempt + 1), RETRY_MS)
             }
             return
