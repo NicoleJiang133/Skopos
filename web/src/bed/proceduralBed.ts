@@ -6,7 +6,9 @@ interface BedParams {
 }
 
 /**
- * Zero-dependency fallback world when no venue photo is loaded.
+ * Offline stand-in for the Visko stream: a canvas "world" driven by the same
+ * prompt-program state machine, so the bed keeps reacting when no live session
+ * (or no pre-recorded clip) is available.
  */
 export function startProceduralBed(canvas: HTMLCanvasElement, getParams: () => BedParams) {
   const ctx = canvas.getContext('2d')!

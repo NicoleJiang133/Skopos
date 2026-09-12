@@ -9,10 +9,13 @@ const states: Record<BedState, string> = {
   replanning:
     'The small robot pauses and turns, then rolls smoothly along a new winding path between the tables on the grass.',
   done: 'The robot arrives at a table and settles, the garden calm in warm evening light.',
-  alert: 'The sky turns overcast and warm lanterns switch on across the garden tables.',
+  alert:
+    'The sky turns overcast and warm lanterns switch on across the garden tables.',
 }
 
 export const liveOpsProgram: PromptProgram = {
+  anchor: '/keyframes/liveops.svg',
+  fallback: '/fallback/liveops.mp4',
   hue: 90,
   states,
   composePrompt: (state) => composeWithBible(states[state]),

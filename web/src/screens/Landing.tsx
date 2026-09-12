@@ -82,7 +82,7 @@ export function Landing() {
                 color: 'var(--sk-text-dim)',
               }}
             >
-              Your venue becomes the world
+              World will be generated from this photo
             </div>
           </div>
         )}

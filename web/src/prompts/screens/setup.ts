@@ -2,7 +2,7 @@ import { composeWithBible } from '../styleBible'
 import type { BedState, PromptProgram } from '../types'
 
 const states: Record<BedState, string> = {
-  idle: "High bird's-eye view looking down onto an empty stone courtyard of a countryside venue at golden hour, flagstone floor with warm sunlight, potted olive trees and ivy along the low walls, meadow and hills at the edges of frame.",
+  idle: 'High bird\'s-eye view looking down onto an empty stone courtyard of a countryside venue at golden hour, flagstone floor with warm sunlight, potted olive trees and ivy along the low walls, meadow and hills at the edges of frame.',
   enter:
     'The camera rises gently above the courtyard as the sun comes out and warm light spreads across the flagstones.',
   drag: 'Sunlight and canopy shadows shift across the courtyard floor as something is set down on the flagstones, a little dust catching the light.',
@@ -13,6 +13,8 @@ const states: Record<BedState, string> = {
 }
 
 export const setupProgram: PromptProgram = {
+  anchor: '/keyframes/setup.svg',
+  fallback: '/fallback/setup.mp4',
   hue: 32,
   states,
   composePrompt: (state) => composeWithBible(states[state]),

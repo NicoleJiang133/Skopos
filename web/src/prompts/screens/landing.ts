@@ -13,6 +13,8 @@ const states: Record<BedState, string> = {
 }
 
 export const landingProgram: PromptProgram = {
+  anchor: '/keyframes/landing.svg',
+  fallback: '/fallback/landing.mp4',
   hue: 38,
   states,
   composePrompt: (state) => composeWithBible(states[state]),
