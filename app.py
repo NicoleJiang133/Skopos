@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 import logging
 import os
@@ -36,7 +37,7 @@ from engine import (
     default_proposal,
     reliable,
 )
-from bandit import OnlineBandit
+from bandit import OnlineBandit, _point_segment_distance
 from privacy import PrivacyLedger, startup_assertion
 from providers.base import RenderRequest, WorldModelProvider
 from recorder import Recorder, list_runs, replay_events
@@ -54,6 +55,10 @@ ELITE_K = 12
 # making the bars legible to a human watching them move.
 BANDIT_TICKS_PER_FRAME = 3
 BANDIT_INTERVAL_MS = 110
+# A campaign is streamed in chunks so the readiness estimate visibly settles
+# instead of jumping. Each chunk uses its own seed offset, so the draws are
+# genuinely new samples and the whole run stays reproducible from one seed.
+CAMPAIGN_CHUNKS = 10
 
 
 def build_provider(name: Optional[str] = None) -> WorldModelProvider:
@@ -162,6 +167,28 @@ def rescore(camp: Campaign, prior) -> Dict[str, Any]:
     }
 
 
+def partial_report(camp: Campaign, strategy: str, target_m: int) -> Dict[str, Any]:
+    """Cheap mid-campaign snapshot: readiness and attribution only.
+
+    Deliberately skips the per-archetype re-weighting, which is a full pass over
+    every stored theta per archetype and would dominate the streaming loop.
+    """
+    score, state = camp.readiness()
+    attribution = camp.attribution()
+    total_fail = sum(attribution.values()) or 1
+    return {
+        "samples": len(camp.thetas),
+        "target_samples": target_m,
+        "strategy": strategy,
+        "p_fail": round(camp.p_fail(), 4),
+        "readiness": {"score": score, "state": state},
+        "attribution": [
+            {"object": k, "failures": v, "share": round(v / total_fail, 4)}
+            for k, v in attribution.items()
+        ],
+    }
+
+
 def campaign_report(camp: Campaign, strategy: str, m: int, seed: int) -> Dict[str, Any]:
     """Everything the UI needs from one campaign. No new sampling happens here."""
     score, state = camp.readiness()
@@ -206,6 +233,98 @@ class Demo:
     bandit: Optional[OnlineBandit] = None
     archetype: str = ""          # empty = show the proposal estimate
     sample_ms: float = 0.0
+
+    def move_item(self, name: str, x: float, y: float) -> bool:
+        """Move one object in the base scene graph. Frozen dataclasses, so rebuild."""
+        items = []
+        found = False
+        for it in self.scene.items:
+            if it.name == name:
+                items.append(replace(it, x=float(x), y=float(y)))
+                found = True
+            else:
+                items.append(it)
+        if found:
+            self.set_scene(replace(self.scene, items=tuple(items)))
+        return found
+
+    # NOTE: there is deliberately no lighting control on the base scene.
+    # engine.apply() overwrites scene.lighting with the sampled theta.lighting,
+    # so editing it here would change the render and change nothing about the
+    # measurement. Lighting is a perturbation axis, not a property of the scan:
+    # you change it by switching archetype.
+
+    def clear_top_hazard(self) -> Optional[Dict[str, Any]]:
+        """Act on the report: move the worst flagged object out of the path.
+
+        This is the product in one click. The hazard list names an object; we
+        move that object to whichever candidate spot is furthest from the
+        robot-to-target line, and re-measure.
+        """
+        if not self.report:
+            return None
+        target = self.scene.get(self.scene.target)
+        if target is None:
+            return None
+        rx, ry = self.scene.robot
+        tx, ty = target.x, target.y
+        by_name = {it.name: it for it in self.scene.items}
+
+        # Walk the hazard list worst-first for something that is (a) an actual
+        # object in the room and (b) still near the path. An attribution like
+        # "target_absent" or "unmodelled_clutter" names no object to move, and
+        # an object already parked in a corner is not worth moving again.
+        worst = None
+        for h in self.report["attribution"]:
+            name = h["object"]
+            it = by_name.get(name)
+            if it is None or name == self.scene.target:
+                continue
+            d = _point_segment_distance(it.x, it.y, rx, ry, tx, ty)
+            if d > it.radius + 0.5:
+                continue                      # already clear of the path
+            worst = name
+            break
+        if worst is None:
+            top = self.report["attribution"][0]["object"] if self.report["attribution"] else "nothing"
+            return {"object": None, "reason": (
+                "nothing left to move: the remaining failures are attributed to "
+                + top.replace("_", " "))}
+
+        item = by_name[worst]
+        r = item.radius
+        # Candidate parking spots, inset from the walls by the object's radius.
+        # Search the floor for the spot furthest from the robot-to-target line
+        # that does not overlap another object. A fixed set of corners is not
+        # enough: the sofa and the lamp already occupy two of them.
+        best = None
+        best_d = -1.0
+        y = 0.2
+        while y <= 2.45:
+            x = 0.2
+            while x <= 3.25:
+                clear_of_others = all(
+                    math.hypot(o.x - x, o.y - y) > (o.radius + r + 0.15)
+                    for o in self.scene.items if o.name != worst
+                )
+                if clear_of_others:
+                    d = _point_segment_distance(x, y, rx, ry, tx, ty)
+                    if d > best_d:
+                        best_d, best = d, (x, y)
+                x += 0.2
+            y += 0.2
+
+        # If the best available spot is still in the path, moving it is pointless.
+        if best is None or best_d <= r + 0.5:
+            return {"object": None, "reason": (
+                "no clear spot left for " + worst.replace("_", " ")
+                + " — the room has run out of floor")}
+
+        self.move_item(worst, best[0], best[1])
+        return {"object": worst, "to": [round(best[0], 2), round(best[1], 2)]}
+
+    def reset_scene(self) -> None:
+        self.set_scene(DEMO_ROOM)
 
     def ensure_bandit(self) -> OnlineBandit:
         if self.bandit is None:
@@ -376,22 +495,49 @@ class Loop:
             pass
 
     async def run_campaign(self, strategy: Optional[str] = None) -> None:
+        """Stream a campaign in chunks so the readiness estimate settles visibly."""
         if self.busy:
             return
         self.busy = True
         try:
-            await self.send({"type": "campaign_start", "samples": self.d.m,
-                             "strategy": strategy or self.d.strategy})
-            report = await asyncio.to_thread(self.d.run_campaign, strategy)
-            payload = self.d.scene_payload()
+            d = self.d
+            if strategy:
+                d.strategy = strategy
+            await self.send({"type": "campaign_start", "samples": d.m,
+                             "strategy": d.strategy, "chunks": CAMPAIGN_CHUNKS})
+
+            camp = Campaign(d.scene, CachedProposal(default_proposal()))
+            per = max(1, d.m // CAMPAIGN_CHUNKS)
+            t0 = time.perf_counter()
+            for i in range(CAMPAIGN_CHUNKS):
+                n = per if i < CAMPAIGN_CHUNKS - 1 else d.m - per * (CAMPAIGN_CHUNKS - 1)
+                if n <= 0:
+                    continue
+                # Distinct seed per chunk: new draws, still reproducible.
+                await asyncio.to_thread(camp.run, n, d.strategy, d.seed * 1000 + i)
+                await self.send({"type": "campaign_progress",
+                                 "report": partial_report(camp, d.strategy, d.m),
+                                 "chunk": i + 1, "chunks": CAMPAIGN_CHUNKS})
+            d.sample_ms = (time.perf_counter() - t0) * 1000.0
+
+            d.campaign = camp
+            report = await asyncio.to_thread(
+                campaign_report, camp, d.strategy, len(camp.thetas), d.seed)
+            report["sample_ms"] = round(d.sample_ms, 1)
+            d.report = report
+            d.history.append(report["readiness"]["score"])
+            if len(d.history) > 200:
+                d.history = d.history[-200:]
+
+            payload = d.scene_payload()
             await self.render_base()
             await self.send({
                 "type": "campaign_done",
                 "report": report,
-                "history": self.d.history,
-                "scene": scene_to_dict(self.d.scene),
+                "history": d.history,
+                "scene": scene_to_dict(d.scene),
                 "scene_payload": payload,
-                "privacy": self.d.ledger.to_dict(),
+                "privacy": d.ledger.to_dict(),
             })
         finally:
             self.busy = False
@@ -408,6 +554,25 @@ class Loop:
         ))
         await self.send({"type": "frame", "frame": frame.to_dict(),
                          "strategy": self.d.strategy, "label": "base room"})
+
+    async def after_scene_change(self, what: str, rerun: bool) -> None:
+        """The room changed: push the new payload and render, then re-measure.
+
+        The bandit model is kept on purpose. Arm value is a function of the room
+        context, and the context is exactly what changed, so the estimates carry
+        over and the bars re-order in front of you.
+        """
+        payload = self.d.scene_payload()
+        await self.send({
+            "type": "scene_changed",
+            "scene": scene_to_dict(self.d.scene),
+            "scene_payload": payload,
+            "privacy": self.d.ledger.to_dict(),
+            "what": what,
+        })
+        await self.render_base()
+        if rerun:
+            await self.run_campaign()
 
     async def rescore(self, name: str) -> None:
         """Re-weight the existing campaign onto another archetype. No sampling."""
@@ -437,6 +602,26 @@ class Loop:
             await self.run_campaign(strategy)
         elif t == "get_state":
             await self.send_state()
+        elif t == "move_item":
+            name = str(msg.get("name", ""))
+            if self.d.move_item(name, msg.get("x", 0.0), msg.get("y", 0.0)):
+                await self.after_scene_change("moved " + name.replace("_", " "),
+                                              bool(msg.get("rerun", False)))
+        elif t == "clear_hazard":
+            moved = self.d.clear_top_hazard()
+            if moved is None:
+                await self.send({"type": "toast", "text": "run a campaign first"})
+            elif moved.get("object") is None:
+                await self.send({"type": "toast", "text": moved["reason"]})
+            else:
+                await self.after_scene_change(
+                    "moved {} to ({}, {}) \u2014 re-measuring".format(
+                        moved["object"].replace("_", " "), moved["to"][0], moved["to"][1]),
+                    True)
+        elif t == "reset_scene":
+            self.d.reset_scene()
+            await self.after_scene_change("scene reset to the scanned room",
+                                          bool(msg.get("rerun", True)))
         elif t == "rescore":
             await self.rescore(msg.get("archetype", ""))
         elif t == "bandit_pause":

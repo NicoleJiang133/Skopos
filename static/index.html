@@ -66,6 +66,11 @@
   button.danger{border-color:var(--bad);color:var(--bad)}
   button:disabled{opacity:.4;cursor:not-allowed}
   .btnrow{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
+  .ctl{display:flex;flex-direction:column;gap:3px;margin-bottom:7px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .ctl label{font:11px/1.2 var(--mono);color:var(--fg)}
+  .ctl .val{font:11px/1 var(--mono);color:var(--accent);min-width:36px;text-align:right}
+  input[type=range]{width:100%;accent-color:var(--accent);height:15px;margin:0}
   label.fld{display:flex;flex-direction:column;gap:3px;font:10px var(--mono);color:var(--dim)}
   input[type=number]{font:11px var(--mono);padding:5px 6px;border-radius:5px;width:86px;
         background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
@@ -192,11 +197,42 @@
         </div>
         <div class="btnrow">
           <button id="btn-run" class="primary">Run campaign</button>
+          <span class="note" id="run-progress"></span>
         </div>
         <div class="note" style="margin-top:9px">
           Scoring happens on the scene graph, not on rendered frames. That is why
           twenty thousand configurations is affordable and why only a handful are
           ever rendered.
+        </div>
+
+        <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:9px">
+          <div style="font:600 10px var(--mono);letter-spacing:.1em;color:var(--dim);
+                      text-transform:uppercase;margin-bottom:7px">move an object</div>
+          <div class="btnrow" style="margin-bottom:7px">
+            <label class="fld" style="flex:1">object
+              <select id="in-item" style="width:100%"></select>
+            </label>
+          </div>
+          <div class="ctl">
+            <div class="row"><label for="in-x">x</label><span class="val" id="v-x">&mdash;</span></div>
+            <input type="range" id="in-x" min="0" max="3.4" step="0.05" value="0">
+          </div>
+          <div class="ctl">
+            <div class="row"><label for="in-y">y</label><span class="val" id="v-y">&mdash;</span></div>
+            <input type="range" id="in-y" min="0" max="2.5" step="0.05" value="0">
+          </div>
+          <div class="btnrow" style="margin-top:4px">
+            <button id="btn-clear" class="primary">Clear the worst hazard</button>
+            <button id="btn-reset-room">Reset room</button>
+          </div>
+          <div class="note" style="margin-top:7px">
+            Releasing a slider re-measures. The bandit keeps its estimates: arm
+            value is a function of the room context, and the context is what changed.
+            <br><br>
+            There is no lighting control here on purpose. Lighting and clutter are
+            sampled perturbation axes, not properties of the scan &mdash; the sampler
+            overwrites them on every draw. Change them by switching archetype.
+          </div>
         </div>
       </div>
     </div>
@@ -297,6 +333,8 @@ function handle(m){
     case "frame": onFrame(m); break;
     case "bandit": onBandit(m); break;
     case "rescored": onRescored(m); break;
+    case "campaign_progress": onProgress(m); break;
+    case "scene_changed": onSceneChanged(m); break;
     case "toast": toast(m.text); break;
   }
 }
@@ -329,7 +367,10 @@ function renderState(s){
   }
   sel.value = s.strategy;
 
-  if(s.scene) $("payload").textContent = JSON.stringify(s.scene, null, 2);
+  if(s.scene){
+    $("payload").textContent = JSON.stringify(s.scene, null, 2);
+    syncItemControls(s.scene);
+  }
   if(s.bandit) drawArms(s.bandit);
 
   const asel = $("in-archetype");
@@ -349,7 +390,28 @@ function renderState(s){
   $("m-runs").textContent = (s.history || []).length;
 }
 
+function onProgress(m){
+  // Mid-campaign: readiness and hazards only, so the number visibly settles.
+  const r = m.report;
+  setHeadline(r.readiness.score, r.readiness.state,
+              r.samples.toLocaleString() + " / " + r.target_samples.toLocaleString() + " samples");
+  drawHazards(r);
+  $("m-pfail").textContent = (100 * r.p_fail).toFixed(2) + "%";
+  $("run-progress").textContent = "chunk " + m.chunk + "/" + m.chunks;
+}
+
+function onSceneChanged(m){
+  const pay = $("payload");
+  pay.textContent = m.scene_payload;
+  pay.classList.remove("flash"); void pay.offsetWidth; pay.classList.add("flash");
+  if(m.privacy) drawPrivacy(m.privacy);
+  if(state) state.scene = m.scene;
+  syncItemControls(m.scene);
+  if(m.what) toast(m.what);
+}
+
 function onCampaign(m){
+  $("run-progress").textContent = "";
   drawReport(m.report);
   drawSpark(m.history);
   $("m-runs").textContent = m.history.length;
@@ -397,6 +459,10 @@ function drawReport(r){
     "readiness = 100 × (1 − P(failure)) under the proposal. "
     + "READY at 85 and above, MARGINAL at 60, below that NOT READY.";
 
+  drawHazards(r);
+}
+
+function drawHazards(r){
   const tb = $("haz").querySelector("tbody");
   tb.innerHTML = '<tr><th>object</th><th class="barcell"></th><th class="r">failures</th><th class="r">share</th></tr>';
   const top = r.attribution[0] ? r.attribution[0].failures : 1;
@@ -474,6 +540,8 @@ function onFrame(m){
   $("s-lat").textContent = "render " + m.frame.latency_ms.toFixed(1) + "ms";
 }
 
+function drawPrivacy(p){ /* filled in by the privacy panel, step 6 */ }
+
 function onBandit(m){ drawArms(m.bandit); }
 
 function drawArms(b){
@@ -510,6 +578,29 @@ function drawArms(b){
       '<div class="fill bonus" style="width:' + bw + '%"></div></div>';
     box.appendChild(d);
   });
+}
+
+function syncItemControls(scene){
+  const sel = $("in-item");
+  if(!sel.options.length){
+    scene.items.forEach(it => {
+      const o = document.createElement("option");
+      o.value = it.name;
+      o.textContent = it.name.replace(/_/g, " ") + (it.movable ? "" : "  (fixed)");
+      sel.appendChild(o);
+    });
+    sel.value = "glass_table";
+  }
+  const it = scene.items.find(i => i.name === sel.value);
+  if(it){
+    $("in-x").value = it.x; $("v-x").textContent = it.x.toFixed(2);
+    $("in-y").value = it.y; $("v-y").textContent = it.y.toFixed(2);
+  }
+}
+
+function currentMove(rerun){
+  return {type:"move_item", name:$("in-item").value,
+          x: parseFloat($("in-x").value), y: parseFloat($("in-y").value), rerun: !!rerun};
 }
 
 // canvas sparkline, no chart library
@@ -556,6 +647,21 @@ $("btn-bandit").onclick = () => {
   $("btn-bandit").className = banditOn ? "primary" : "";
 };
 $("btn-bandit-reset").onclick = () => send({type:"bandit_reset"});
+
+$("in-item").addEventListener("change", () => {
+  if(state && state.scene) syncItemControls(state.scene);
+});
+["in-x","in-y"].forEach(id => {
+  // dragging updates the graph and the render; releasing re-measures
+  $(id).addEventListener("input", () => {
+    $("v-x").textContent = parseFloat($("in-x").value).toFixed(2);
+    $("v-y").textContent = parseFloat($("in-y").value).toFixed(2);
+    send(currentMove(false));
+  });
+  $(id).addEventListener("change", () => send(currentMove(true)));
+});
+$("btn-clear").onclick = () => send({type:"clear_hazard"});
+$("btn-reset-room").onclick = () => send({type:"reset_scene", rerun:true});
 
 $("in-archetype").addEventListener("change", (e) => {
   const name = e.target.value;
